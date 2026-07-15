@@ -29,6 +29,7 @@ model Store {
   termsAcceptances  TermsAcceptance[]
   supportTickets    SupportTicket[]
   rentableProducts  RentableProduct[]
+  rentals           Rental[]
   @@map("stores")
 }
 
@@ -231,6 +232,31 @@ model RentableProduct {
 
   @@unique([storeId, productId])
   @@map("rentable_products")
+}
+
+model Rental {
+  id               Int      @id @default(autoincrement())
+  storeId          Int
+  store            Store    @relation(fields: [storeId], references: [id], onDelete: Cascade)
+  productId        String   // ID do produto na Nuvemshop (espelha RentableProduct.productId)
+  orderId          String   // ID do pedido na Nuvemshop
+  orderNumber      Int      // Número do pedido (exibível ao lojista — distinto do id)
+  status           Int      @default(1) // 0=cancelado 1=agendado 2=enviado 3=devolvido
+  quantity         Int      @default(1)
+  eventDate        DateTime // data do evento escolhida pelo cliente
+  reservationStart DateTime // eventDate − diasAntes  (produto sai do estoque)
+  reservationEnd   DateTime // eventDate + diasDepois (produto volta ao estoque)
+  customerName     String?
+  orderCreatedAt   DateTime // created_at fornecido pela Nuvemshop
+  createdAt        DateTime @default(now())
+  updatedAt        DateTime @updatedAt
+
+  // Único por loja+pedido+produto — garante idempotência no webhook (NS pode reenviar)
+  @@unique([storeId, orderId, productId])
+  // Índice para a consulta de disponibilidade (overlap de reservas)
+  @@index([storeId, productId, reservationStart, reservationEnd])
+  @@index([storeId, status])
+  @@map("rentals")
 }
 
 // ─── Suporte (tickets) ─────────────────────────────────────────────────────

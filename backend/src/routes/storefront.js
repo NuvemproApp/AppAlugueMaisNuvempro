@@ -110,16 +110,53 @@ router.get('/:storeId/products/:productId/availability', async function (req, re
 
     var qty = Math.max(1, parseInt(req.query.qty, 10) || 1);
 
-    // TODO: calcular booked = MAX(qty_alugada) em qualquer dia do intervalo [from, to]
-    // quando o modelo Booking/Aluguel for implementado.
+    // Calcula o pico de aluguel concurrent no intervalo [from, to].
+    // Mesmo algoritmo do C# (iteração dia a dia):
+    //   para cada dia do intervalo, soma as quantidades dos aluguéis que o cobrem.
+    //   booked = máximo diário → determina o estoque disponível no período.
+    // Status considerados como ocupados: 1=agendado, 2=enviado.
+    var fromDate = req.query.from ? new Date(req.query.from + 'T00:00:00') : null;
+    var toDate   = req.query.to   ? new Date(req.query.to   + 'T23:59:59') : null;
+
     var booked = 0;
+
+    if (fromDate && toDate && !isNaN(fromDate) && !isNaN(toDate)) {
+      var overlapping = await prisma.rental.findMany({
+        where: {
+          storeId:          store.id,
+          productId:        String(req.params.productId),
+          status:           { in: [1, 2] },
+          reservationStart: { lte: toDate },
+          reservationEnd:   { gte: fromDate },
+        },
+        select: { quantity: true, reservationStart: true, reservationEnd: true },
+      });
+
+      if (overlapping.length > 0) {
+        var MS_PER_DAY = 86400000;
+        var fromMs = fromDate.getTime();
+        var toMs   = toDate.getTime();
+
+        for (var dayMs = fromMs; dayMs <= toMs; dayMs += MS_PER_DAY) {
+          var dayBooked = 0;
+          for (var ri = 0; ri < overlapping.length; ri++) {
+            var r = overlapping[ri];
+            if (r.reservationStart.getTime() <= dayMs && dayMs <= r.reservationEnd.getTime()) {
+              dayBooked += r.quantity;
+            }
+          }
+          if (dayBooked > booked) booked = dayBooked;
+        }
+      }
+    }
+
     var remaining = Math.max(0, product.estoque - booked);
 
     res.setHeader('Cache-Control', 'no-store');
     res.json({
       available: remaining >= qty,
       remaining: remaining,
-      booked: booked,
+      booked:    booked,
     });
   } catch (err) {
     console.error('[storefront] availability:', err.message);

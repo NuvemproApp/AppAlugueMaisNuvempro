@@ -1,5 +1,6 @@
 const express = require('express');
 const crypto = require('crypto');
+const axios = require('axios');
 const prisma = require('../lib/prisma');
 
 const router = express.Router();
@@ -88,6 +89,166 @@ router.post('/customers/redact', (req, res) => {
 router.post('/customers/data_request', (req, res) => {
   console.log(`[nuvemshop][LGPD] customers/data_request store_id=${req.body?.store_id}`);
   res.status(200).json({ success: true, data: [] });
+});
+
+// ─── Rótulos da data do evento em todos os idiomas suportados ────────────────
+const EVENT_DATE_LABELS = ['Data do Evento', 'Fecha del Evento'];
+
+/**
+ * Extrai a data do evento das propriedades de um produto do pedido.
+ * A NS retorna properties como array de { name, value }.
+ * Cobre pt-BR ("Data do Evento") e es-AR/es-MX ("Fecha del Evento").
+ */
+function extractEventDate(properties) {
+  if (!Array.isArray(properties)) return null;
+  const prop = properties.find(
+    (p) => EVENT_DATE_LABELS.includes((p.name || '').trim())
+  );
+  return prop ? (prop.value || '').trim() : null;
+}
+
+/**
+ * Busca o pedido completo na API da Nuvemshop.
+ * Usamos api.tiendanube.com — funciona para BR e LATAM.
+ */
+async function fetchNsOrder(store, orderId) {
+  const { data } = await axios.get(
+    `https://api.tiendanube.com/v1/${store.nuvemshopId}/orders/${orderId}`,
+    {
+      headers: {
+        Authentication: `bearer ${store.accessToken}`,
+        'User-Agent': `AlugueMais (${process.env.APP_EMAIL || 'contato@aluguemais.nuvempro.com'})`,
+      },
+      timeout: 15000,
+    }
+  );
+  return data;
+}
+
+/**
+ * Processa um pedido recém-criado:
+ *   - verifica quais produtos são alugáveis
+ *   - extrai a data do evento de cada um
+ *   - calcula o intervalo de reserva (eventDate ± diasAntes/diasDepois)
+ *   - cria (ou ignora se já existir) o registro de aluguel
+ *
+ * Sempre retorna sem lançar — erros são logados, nunca propagados ao caller.
+ */
+async function processOrderCreated(storeNsId, orderId) {
+  // 1. Loja deve existir e estar instalada
+  const store = await prisma.store.findUnique({
+    where: { nuvemshopId: String(storeNsId) },
+    select: { id: true, nuvemshopId: true, accessToken: true, uninstalledAt: true },
+  });
+  if (!store || store.uninstalledAt) {
+    console.log(`[order/created] loja ${storeNsId} não encontrada ou desinstalada — ignorado`);
+    return;
+  }
+
+  // 2. Pedido completo via API NS (inclui products[].properties)
+  const order = await fetchNsOrder(store, orderId);
+  if (!order || !Array.isArray(order.products) || !order.products.length) {
+    console.log(`[order/created] pedido ${orderId} vazio ou inválido — ignorado`);
+    return;
+  }
+
+  // 3. Produtos alugáveis da loja (uma única query)
+  const rentables = await prisma.rentableProduct.findMany({
+    where: { storeId: store.id, status: 1 },
+    select: { productId: true, diasAntes: true, diasDepois: true },
+  });
+  if (!rentables.length) return;
+
+  const rentableMap = new Map(rentables.map((r) => [r.productId, r]));
+
+  // 4. Para cada produto do pedido, registra o aluguel se for alugável
+  for (const item of order.products) {
+    const productId = String(item.product_id);
+    const rentable = rentableMap.get(productId);
+    if (!rentable) continue;
+
+    // Extrai a data do evento (multi-idioma)
+    const rawDate = extractEventDate(item.properties);
+    if (!rawDate) {
+      console.warn(
+        `[order/created] produto ${productId} pedido ${orderId}: ` +
+        `propriedade "Data do Evento" ausente nas properties`
+      );
+      continue;
+    }
+
+    // Parse robusto: aceita 'YYYY-MM-DD' e ISO completo
+    const eventDate = new Date(rawDate.includes('T') ? rawDate : rawDate + 'T00:00:00');
+    if (isNaN(eventDate.getTime())) {
+      console.warn(`[order/created] data inválida "${rawDate}" produto ${productId} pedido ${orderId}`);
+      continue;
+    }
+
+    const reservationStart = new Date(eventDate.getTime() - rentable.diasAntes  * 86400000);
+    const reservationEnd   = new Date(eventDate.getTime() + rentable.diasDepois * 86400000);
+
+    // Upsert idempotente: reenvio de webhook não cria duplicata
+    await prisma.rental.upsert({
+      where: {
+        storeId_orderId_productId: {
+          storeId: store.id,
+          orderId: String(orderId),
+          productId,
+        },
+      },
+      update: {}, // já existe → não sobrescreve (webhook retentado)
+      create: {
+        storeId:        store.id,
+        productId,
+        orderId:        String(orderId),
+        orderNumber:    order.number   || 0,
+        status:         1,             // 1 = agendado
+        quantity:       item.quantity  || 1,
+        eventDate,
+        reservationStart,
+        reservationEnd,
+        customerName:   order.customer?.name || null,
+        orderCreatedAt: order.created_at ? new Date(order.created_at) : new Date(),
+      },
+    });
+
+    console.log(
+      `[order/created] aluguel registrado ` +
+      `store=${store.id} order=${orderId} product=${productId} ` +
+      `evento=${rawDate} reserva=[${reservationStart.toISOString().slice(0, 10)},${reservationEnd.toISOString().slice(0, 10)}]`
+    );
+  }
+}
+
+/**
+ * POST /webhooks/orders/created — novo pedido na loja.
+ * Percorre os produtos e registra aluguéis para os alugáveis.
+ * Sempre responde 200: a NS não deve retentar por falhas internas.
+ */
+router.post('/orders/created', async (req, res) => {
+  const hmac = checkHmac(req);
+  if (hmac === false) {
+    console.warn('[nuvemshop] orders/created com HMAC inválido — ignorado');
+    return res.status(401).json({ error: 'Invalid HMAC.' });
+  }
+
+  const storeId = req.body?.store_id;
+  const orderId = req.body?.id;
+
+  if (!storeId || !orderId) {
+    console.warn('[nuvemshop] orders/created payload inválido:', req.body);
+    return res.status(200).json({ success: true });
+  }
+
+  console.log(`[nuvemshop] orders/created store_id=${storeId} order_id=${orderId}`);
+
+  try {
+    await processOrderCreated(storeId, orderId);
+  } catch (err) {
+    console.error(`[order/created] erro store=${storeId} order=${orderId}:`, err.message);
+  }
+
+  res.status(200).json({ success: true });
 });
 
 module.exports = router;
