@@ -207,7 +207,12 @@ export default function AppNav() {
           >
             {t('nav.dashboard')}
           </Button>
-          {/* Adicione aqui os itens de nav específicos do seu app */}
+          <Button
+            appearance={isActive('/produtos') ? 'primary' : 'neutral'}
+            onClick={() => navigate('/produtos')}
+          >
+            {t('nav.products')}
+          </Button>
         </Box>
 
         {/* Right nav */}

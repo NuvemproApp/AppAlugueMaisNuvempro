@@ -28,6 +28,7 @@ model Store {
   profile           StoreProfile?
   termsAcceptances  TermsAcceptance[]
   supportTickets    SupportTicket[]
+  rentableProducts  RentableProduct[]
   @@map("stores")
 }
 
@@ -210,6 +211,24 @@ model AdminFaq {
   createdAt   DateTime @default(now())
   updatedAt   DateTime @updatedAt
   @@map("admin_faqs")
+}
+
+// ═══ ALUGUE MAIS ═══
+
+model RentableProduct {
+  id         Int      @id @default(autoincrement())
+  storeId    Int
+  store      Store    @relation(fields: [storeId], references: [id], onDelete: Cascade)
+  productId  String   // ID do produto na Nuvemshop
+  status     Int      @default(1) // 1=ativo, 0=inativo
+  diasAntes  Int      @default(0) // dias de antecedência obrigatória
+  diasDepois Int      @default(0) // dias de bloqueio após o evento
+  estoque    Int      @default(1) // quantidade disponível para aluguel
+  createdAt  DateTime @default(now())
+  updatedAt  DateTime @updatedAt
+
+  @@unique([storeId, productId])
+  @@map("rentable_products")
 }
 
 // ─── Suporte (tickets) ─────────────────────────────────────────────────────
