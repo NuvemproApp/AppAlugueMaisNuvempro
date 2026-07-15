@@ -219,7 +219,9 @@ model RentableProduct {
   id         Int      @id @default(autoincrement())
   storeId    Int
   store      Store    @relation(fields: [storeId], references: [id], onDelete: Cascade)
-  productId  String   // ID do produto na Nuvemshop
+  productId       String   // ID do produto na Nuvemshop
+  nuvemshopName   String?  // cache do nome (evita chamada à API no GET)
+  nuvemshopImage  String?  // cache da imagem principal
   status     Int      @default(1) // 1=ativo, 0=inativo
   diasAntes  Int      @default(0) // dias de antecedência obrigatória
   diasDepois Int      @default(0) // dias de bloqueio após o evento

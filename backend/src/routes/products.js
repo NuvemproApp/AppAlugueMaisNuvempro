@@ -7,7 +7,7 @@ const { requireAuth } = require('../middleware/auth');
 const router = express.Router();
 router.use(requireAuth);
 
-// ─── Helper: busca todos os produtos da Nuvemshop (paginado) ─────────────────
+// ─── Helper: busca produtos da Nuvemshop (paginado) ──────────────────────────
 async function fetchNuvemshopProducts(store) {
   const products = [];
   let page = 1;
@@ -34,45 +34,30 @@ async function fetchNuvemshopProducts(store) {
   return products;
 }
 
-// ─── GET /api/products ── lista produtos alugáveis com dados enriquecidos ────
+// ─── Helper: extrai nome e imagem de um produto NS ───────────────────────────
+function extractNameImage(nsProduct) {
+  const name = nsProduct?.name
+    ? (nsProduct.name.pt || nsProduct.name.es || Object.values(nsProduct.name)[0] || '')
+    : '';
+  const image = nsProduct?.images?.[0]?.src || null;
+  return { name, image };
+}
+
+// ─── GET /api/products ── lista produtos alugáveis (sem chamada externa) ─────
 router.get('/', async (req, res, next) => {
   try {
-    const rentable = await prisma.rentableProduct.findMany({
+    const products = await prisma.rentableProduct.findMany({
       where: { storeId: req.store.id },
       orderBy: { createdAt: 'desc' },
     });
-
-    if (rentable.length === 0) {
-      return res.json({ products: [] });
-    }
-
-    // Busca dados da Nuvemshop para enriquecer a resposta
-    let nsProducts = [];
-    try {
-      nsProducts = await fetchNuvemshopProducts(req.store);
-    } catch (_) {
-      // Se a API da Nuvemshop falhar, retorna sem enriquecimento
-    }
-
-    const nsMap = {};
-    nsProducts.forEach((p) => { nsMap[String(p.id)] = p; });
-
-    const enriched = rentable.map((r) => {
-      const ns = nsMap[r.productId] || null;
-      const name = ns?.name
-        ? (ns.name.pt || ns.name.es || Object.values(ns.name)[0] || r.productId)
-        : r.productId;
-      const image = ns?.images?.[0]?.src || null;
-      return { ...r, nuvemshopName: name, nuvemshopImage: image };
-    });
-
-    res.json({ products: enriched });
+    res.json({ products });
   } catch (err) {
     next(err);
   }
 });
 
-// ─── GET /api/products/nuvemshop ── produtos NS disponíveis (não alugáveis) ─
+// ─── GET /api/products/nuvemshop ── produtos NS disponíveis para adicionar ───
+// Chamado apenas na abertura do modal de criação.
 router.get('/nuvemshop', async (req, res, next) => {
   try {
     const [nsProducts, rentable] = await Promise.all([
@@ -87,11 +72,10 @@ router.get('/nuvemshop', async (req, res, next) => {
 
     const available = nsProducts
       .filter((p) => !rentableIds.has(String(p.id)))
-      .map((p) => ({
-        id: String(p.id),
-        name: p.name?.pt || p.name?.es || Object.values(p.name || {})[0] || String(p.id),
-        image: p.images?.[0]?.src || null,
-      }));
+      .map((p) => {
+        const { name, image } = extractNameImage(p);
+        return { id: String(p.id), name: name || String(p.id), image };
+      });
 
     res.json({ products: available });
   } catch (err) {
@@ -100,6 +84,7 @@ router.get('/nuvemshop', async (req, res, next) => {
 });
 
 // ─── POST /api/products ── cadastra produto alugável ─────────────────────────
+// Busca nome+imagem da Nuvemshop uma única vez e salva no registro.
 router.post('/', async (req, res, next) => {
   try {
     const { productId, status = 1, diasAntes = 0, diasDepois = 0, estoque = 1 } = req.body;
@@ -115,10 +100,34 @@ router.post('/', async (req, res, next) => {
       throw new AppError('Produto já cadastrado como alugável.', 409, 'PRODUCT_ALREADY_EXISTS');
     }
 
+    // Busca nome e imagem da Nuvemshop para cache local
+    let nuvemshopName = null;
+    let nuvemshopImage = null;
+    try {
+      const { data } = await axios.get(
+        `https://api.tiendanube.com/v1/${req.store.nuvemshopId}/products/${productId}`,
+        {
+          params: { fields: 'id,name,images' },
+          headers: {
+            Authentication: `bearer ${req.store.accessToken}`,
+            'User-Agent': `AlugueMais (${process.env.APP_EMAIL || 'contato@aluguemais.nuvempro.com'})`,
+          },
+          timeout: 8000,
+        }
+      );
+      const extracted = extractNameImage(data);
+      nuvemshopName = extracted.name || null;
+      nuvemshopImage = extracted.image || null;
+    } catch (_) {
+      // Se a API falhar, salva sem cache — será exibido o productId como fallback
+    }
+
     const product = await prisma.rentableProduct.create({
       data: {
         storeId: req.store.id,
         productId: String(productId),
+        nuvemshopName,
+        nuvemshopImage,
         status: Number(status),
         diasAntes: Number(diasAntes),
         diasDepois: Number(diasDepois),
@@ -132,7 +141,7 @@ router.post('/', async (req, res, next) => {
   }
 });
 
-// ─── PATCH /api/products/:id ── atualiza produto alugável ────────────────────
+// ─── PATCH /api/products/:id ── atualiza campos editáveis ────────────────────
 router.patch('/:id', async (req, res, next) => {
   try {
     const { id } = req.params;
