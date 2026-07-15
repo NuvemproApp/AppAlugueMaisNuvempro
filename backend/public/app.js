@@ -1,4 +1,4 @@
-/* aluguemais — storefront script v2.0.0
+/* aluguemais — storefront script v2.1.0
  * Injetado na vitrine via Portal de Parceiros Nuvemshop.
  * Compatível com temas antigos, atuais e componentizados.
  * ES5 puro + fetch + MutationObserver (disponíveis em todos os temas NS).
@@ -7,8 +7,15 @@
   'use strict';
 
   // ─── Constantes ───────────────────────────────────────────────────────────────
-  var PROP_DATE = 'properties[Data do Evento]';
   var API_FALLBACK = 'https://appaluguemaisnuvempro-production.up.railway.app';
+  // Nome da propriedade no carrinho: dinâmico por país (definido após country())
+  function propDateName() {
+    return isBR() ? 'properties[Data do Evento]' : 'properties[Fecha del Evento]';
+  }
+  // Rótulo exibido pelo NS no carrinho (sem o "properties[...]")
+  function propDateLabel() {
+    return isBR() ? 'Data do Evento' : 'Fecha del Evento';
+  }
 
   // ─── API base: lida do parâmetro ?api= da tag <script> ───────────────────────
   function detectApiBase() {
@@ -212,23 +219,107 @@
     }
   }
 
-  function observeGrid(ids, skipPid) {
-    if (!window.MutationObserver || !ids.length) return;
+  // ─── CARRINHO: desabilitar quantidade em itens alugáveis ─────────────────────
+  // Nuvemshop renderiza properties no carrinho como rótulo visível (ex: "Data do
+  // Evento: 2027-05-15"). Detectamos esse rótulo e desabilitamos os controles de
+  // quantidade do item pai — tanto na página /comprar quanto no modal lateral.
+
+  // Seletores de controles de quantidade no carrinho (multi-tema)
+  var CART_QTY_INPUT = '.js-quantity-input,input[name*="quantity"],input[name*="updates"]';
+  var CART_QTY_BTN   = [
+    '.js-quantity-down', '.js-quantity-up',
+    '[data-quantity-action]',
+    '[data-action="decrease-quantity"]', '[data-action="increase-quantity"]',
+    '[data-action="minus"]', '[data-action="plus"]',
+    'button[aria-label*="quantity"]',
+  ].join(',');
+
+  // Rótulos possíveis (português e espanhol) — detectamos ambos por segurança
+  var CART_PROP_LABELS = ['Data do Evento', 'Fecha del Evento'];
+
+  // Elementos candidatos a conter o rótulo da propriedade
+  var LABEL_CANDIDATES = 'strong,dt,th,td,span,b,p';
+
+  var _cartDone = (function () {
+    try {
+      var ws = new WeakSet();
+      return { has: function (x) { return ws.has(x); }, add: function (x) { ws.add(x); } };
+    } catch (e) {
+      var arr = [];
+      return { has: function (x) { return arr.indexOf(x) >= 0; }, add: function (x) { arr.push(x); } };
+    }
+  })();
+
+  function applyCartItem(container) {
+    if (_cartDone.has(container)) return;
+    _cartDone.add(container);
+
+    // Desabilita input de quantidade
+    var inputs = container.querySelectorAll(CART_QTY_INPUT);
+    for (var i = 0; i < inputs.length; i++) {
+      inputs[i].setAttribute('disabled', '');
+      inputs[i].style.cssText += ';pointer-events:none;opacity:0.55;cursor:not-allowed;';
+    }
+
+    // Oculta botões + e -
+    var btns = container.querySelectorAll(CART_QTY_BTN);
+    for (var j = 0; j < btns.length; j++) {
+      btns[j].style.display = 'none';
+    }
+  }
+
+  function processCart() {
+    var candidates = document.querySelectorAll(LABEL_CANDIDATES);
+    for (var i = 0; i < candidates.length; i++) {
+      var txt = (candidates[i].textContent || candidates[i].innerText || '').trim();
+      if (!txt || txt.length > 60) continue;
+
+      var isLabel = false;
+      for (var j = 0; j < CART_PROP_LABELS.length; j++) {
+        var lbl = CART_PROP_LABELS[j];
+        if (txt === lbl || txt.indexOf(lbl + ':') === 0 || txt.indexOf(lbl + ' :') === 0) {
+          isLabel = true;
+          break;
+        }
+      }
+      if (!isLabel) continue;
+
+      // Sobe no DOM até achar um ancestral com controles de quantidade
+      var p = candidates[i].parentElement;
+      for (var depth = 0; depth < 14 && p && p !== document.body; depth++) {
+        if (p.querySelector(CART_QTY_INPUT)) {
+          applyCartItem(p);
+          break;
+        }
+        p = p.parentElement;
+      }
+    }
+  }
+
+  // Observer unificado: grade de produtos + abertura do carrinho (modal/page)
+  function observeAll(ids, skipPid) {
+    if (!window.MutationObserver) return;
+    var cartTimer;
     var obs = new MutationObserver(function (muts) {
       for (var i = 0; i < muts.length; i++) {
         var added = muts[i].addedNodes;
         for (var j = 0; j < added.length; j++) {
           var n = added[j];
           if (!n.querySelectorAll) continue;
-          if (n.hasAttribute && n.hasAttribute('data-product-id')) {
-            replaceGridItem(n, ids, skipPid);
-          }
-          var inner = n.querySelectorAll('[data-product-id]');
-          for (var k = 0; k < inner.length; k++) {
-            replaceGridItem(inner[k], ids, skipPid);
+          if (ids.length) {
+            if (n.hasAttribute && n.hasAttribute('data-product-id')) {
+              replaceGridItem(n, ids, skipPid);
+            }
+            var inner = n.querySelectorAll('[data-product-id]');
+            for (var k = 0; k < inner.length; k++) {
+              replaceGridItem(inner[k], ids, skipPid);
+            }
           }
         }
       }
+      // Debounce: modal do carrinho injeta vários nós — processa uma vez ao fim
+      clearTimeout(cartTimer);
+      cartTimer = setTimeout(processCart, 200);
     });
     obs.observe(document.body, { childList: true, subtree: true });
   }
@@ -302,7 +393,7 @@
     // ── Hidden input (submetido dentro do form com properties[...]) ───────────
     var hiddenDate = document.createElement('input');
     hiddenDate.type = 'hidden';
-    hiddenDate.name = PROP_DATE;
+    hiddenDate.name = propDateName();
     hiddenDate.id = 'alm-hidden-date';
 
     // Insere picker antes do container do botão (multi-tema)
@@ -401,12 +492,13 @@
 
     // Carrega IDs alugáveis e processa a grade em TODAS as páginas
     jsonFetch(apiBase + '/storefront/' + sid + '/rentable-ids', function (err, data) {
-      if (err || !data) return;
-      var ids = Array.isArray(data.ids) ? data.ids : [];
-      if (!ids.length) return;
+      var ids = (data && Array.isArray(data.ids)) ? data.ids : [];
       processGrid(ids, pid);  // pula o produto atual (tratado à parte)
-      observeGrid(ids, pid);
+      observeAll(ids, pid);   // grade + carrinho modal/page
     });
+
+    // Processa o carrinho já presente no DOM (página /comprar)
+    processCart();
 
     // Comportamento adicional só na página de produto
     if (!pid) return;
