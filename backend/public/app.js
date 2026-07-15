@@ -1,33 +1,31 @@
-/* aluguemais — storefront script v2.2.0
+/* aluguemais — storefront script v2.3.0
  * Compatível com TODOS os temas Nuvemshop: legados, atuais, componentizados e futuros.
  * Referências:
- *   Anchor Points : https://docs.nuvemshop.com.br/help/pontos-de-anchoragem
- *   Scripts API   : https://tiendanube.github.io/api-documentation/resources/script
+ *   Anchor Points  : https://docs.nuvemshop.com.br/help/pontos-de-anchoragem
+ *   Scripts API    : https://tiendanube.github.io/api-documentation/resources/script
  *   Migration Guide: https://dev.nuvemshop.com.br/docs/applications/nube-sdk/migration-guide
  *
  * NubeSDK NÃO é necessário — este é um script de vitrine (não é checkout).
- * Script tag CDN: script[src*="<app-handle>/<script-handle>"] → script[src*="aluguemais"]
+ * Script tag CDN : script[src*="aluguemais"]
  * ES5 puro + fetch + MutationObserver (disponíveis em todos os temas NS).
  */
 !function () {
   'use strict';
 
   // ─── API base ─────────────────────────────────────────────────────────────────
-  // Novo formato CDN Nuvemshop: cdn.tiendanube.net/apps/<app-handle>/<script-handle>/...
-  // Migration Guide: usar script[src*="<app-handle>/<script-handle>"] como seletor.
   var API_FALLBACK = 'https://appaluguemaisnuvempro-production.up.railway.app';
 
   function detectApiBase() {
     var tags = document.querySelectorAll(
-      'script[src*="aluguemais"],' + // CDN: handle do app (cobre novo e antigo formato)
-      'script[src*="app.min.js"],' + // URL direta legada
-      'script[src*="app.js"]'        // ambiente de desenvolvimento
+      'script[src*="aluguemais"],' +
+      'script[src*="app.min.js"],' +
+      'script[src*="app.js"]'
     );
     for (var i = 0; i < tags.length; i++) {
       try {
         var api = new URL(tags[i].src, location.href).searchParams.get('api');
         if (api) return api.replace(/\/$/, '');
-      } catch (e) { /* src sem query string — ignora */ }
+      } catch (e) {}
     }
     return API_FALLBACK;
   }
@@ -45,21 +43,20 @@
   function isMX() { return country() === 'MX'; }
 
   var TXT = {
-    rent:        function () { return isBR() ? 'Alugar'                          : isMX() ? 'Rentar'                      : 'Alquilar'; },
-    defineDate:  function () { return isBR() ? 'Defina a data do evento'         : isMX() ? 'Define la fecha del evento'   : 'Definí la fecha del evento'; },
-    unavailable: function () { return isBR() ? 'Indisponível'                    : 'No disponible'; },
+    rent:        function () { return isBR() ? 'Alugar'                              : isMX() ? 'Rentar'                      : 'Alquilar'; },
+    defineDate:  function () { return isBR() ? 'Defina a data do evento'             : isMX() ? 'Define la fecha del evento'   : 'Definí la fecha del evento'; },
+    unavailable: function () { return isBR() ? 'Indisponível'                        : 'No disponible'; },
     checking:    function () { return 'Verificando...'; },
-    earlyDate:   function () { return isBR() ? 'Antecedência insuficiente'       : 'Anticipación insuficiente'; },
-    dateLabel:   function () { return isBR() ? 'Informe a data do evento:'       : isMX() ? 'Ingresa la fecha del evento:' : 'Ingresá la fecha del evento:'; },
+    earlyDate:   function () { return isBR() ? 'Antecedência insuficiente'           : 'Anticipación insuficiente'; },
+    dateLabel:   function () { return isBR() ? 'Informe a data do evento:'           : isMX() ? 'Ingresa la fecha del evento:' : 'Ingresá la fecha del evento:'; },
     errCheck:    function () { return isBR() ? 'Erro ao verificar. Tente novamente.' : 'Error al verificar. Intentá de nuevo.'; },
-    okHint:      function () { return isBR() ? 'Data disponível!'                : '¡Fecha disponible!'; },
+    okHint:      function () { return isBR() ? 'Data disponível!'                    : '¡Fecha disponible!'; },
     earlyHint:   function (n) { return isBR() ? 'Escolha com pelo menos ' + n + ' dia(s) de antecedência.' : 'Elegí con al menos ' + n + ' día(s) de anticipación.'; },
-    unavailHint: function () { return isBR() ? 'Data indisponível. Escolha outra.' : 'Fecha no disponible. Elegí otra.'; },
+    unavailHint: function () { return isBR() ? 'Data indisponível. Escolha outra.'   : 'Fecha no disponible. Elegí otra.'; },
     partialHint: function (n) { return isBR() ? 'Apenas ' + n + ' unidade(s) disponível(is) nesta data.' : 'Solo ' + n + ' unidad(es) disponible(s) en esta fecha.'; },
   };
 
-  // Nome da propriedade submetida no form → Nuvemshop exibe como rótulo no carrinho
-  function propDateName()  { return isBR() ? 'properties[Data do Evento]' : 'properties[Fecha del Evento]'; }
+  function propDateName() { return isBR() ? 'properties[Data do Evento]' : 'properties[Fecha del Evento]'; }
 
   // ─── Utilitários de data ──────────────────────────────────────────────────────
   function today0() { var d = new Date(); d.setHours(0, 0, 0, 0); return d; }
@@ -90,23 +87,48 @@
     catch (e) { var arr = []; return { has: function (x) { return arr.indexOf(x) >= 0; }, add: function (x) { arr.push(x); } }; }
   }
 
+  // ─── Injeção de CSS ───────────────────────────────────────────────────────────
+  // Classe alm-cart-item desabilita/oculta controles de quantidade via stylesheet.
+  // Classe nuvempro-cart-prod-pers exibe propriedades em temas legados (mesma do SuperCampos).
+  var _cssInjected = false;
+  function injectAlmCSS() {
+    if (_cssInjected || document.getElementById('alm-css')) { _cssInjected = true; return; }
+    _cssInjected = true;
+    var css =
+      '.alm-cart-item .js-quantity-down,' +
+      '.alm-cart-item .js-quantity-up,' +
+      '.alm-cart-item [data-quantity-action],' +
+      '.alm-cart-item [data-action="decrease-quantity"],' +
+      '.alm-cart-item [data-action="increase-quantity"],' +
+      '.alm-cart-item [data-action="minus"],' +
+      '.alm-cart-item [data-action="plus"]' +
+      '{display:none!important}' +
+      '.alm-cart-item .js-quantity-input,' +
+      '.alm-cart-item input[name*="quantity"],' +
+      '.alm-cart-item input[name*="updates"],' +
+      '.alm-cart-item input[type="number"]' +
+      '{pointer-events:none!important;opacity:.55!important;cursor:not-allowed!important}' +
+      '.nuvempro-cart-prod-pers{font-size:.82em;line-height:1.6;margin-top:5px;padding:3px 0;clear:both}' +
+      '.nuvempro-cart-prod-pers>div{display:block}' +
+      '.nuvempro-cart-prod-pers strong{font-weight:600}' +
+      '.nuvempro-cart-prod-pers span{margin-left:2px}';
+    var style = document.createElement('style');
+    style.id = 'alm-css';
+    style.textContent = css;
+    (document.head || document.documentElement).appendChild(style);
+  }
+
   // ─── ANCHOR POINTS — seletores multi-tema ────────────────────────────────────
-  // Referência: https://docs.nuvemshop.com.br/help/pontos-de-anchoragem
-  //
   // GRADE DE PRODUTOS
-  //   Temas novos  : data-store="product-item-{product.id}"
-  //   Temas antigos: data-product-id="{product.id}"
   var GRID_SEL = '[data-store^="product-item-"],[data-product-id]';
 
   function getGridPid(item) {
     var ds = item.getAttribute('data-store') || '';
-    if (ds.indexOf('product-item-') === 0) return parseInt(ds.slice(13), 10); // 'product-item-'.length === 13
+    if (ds.indexOf('product-item-') === 0) return parseInt(ds.slice(13), 10);
     return parseInt(item.getAttribute('data-product-id') || '0', 10);
   }
 
-  // FORM DO PRODUTO (contém botão de compra e quantity)
-  //   Temas novos  : data-store="product-form-{product.id}"
-  //   Temas antigos: <form>
+  // FORM DO PRODUTO
   function closestProductForm(el) {
     var p = el;
     while (p && p !== document.body) {
@@ -117,10 +139,7 @@
     return null;
   }
 
-  // BOTÃO DE COMPRA (página de produto e grade)
-  //   Temas novos  : submit dentro de [data-store^="product-form-"]
-  //                  OU [data-store="product-buy-button"]
-  //   Temas antigos: .js-addtocart
+  // BOTÃO DE COMPRA
   var BUY_SEL = [
     '[data-store="product-buy-button"]',
     '[data-store^="product-form-"] [type="submit"]',
@@ -140,8 +159,6 @@
   }
 
   // QUANTIDADE (página de produto)
-  //   Temas novos  : input numérico dentro de [data-store^="product-form-"]
-  //   Temas antigos: .js-quantity-input, input[name="quantity"]
   var PROD_QTY_INPUT_SEL = [
     '[data-store^="product-form-"] input[type="number"]',
     '[data-store="product-quantity"] input',
@@ -157,17 +174,19 @@
     return null;
   }
 
-  // Botões +/- de quantidade (página de produto)
   var PROD_QTY_DOWN = '.js-quantity-down,[data-action="decrease-quantity"],[data-quantity-action="down"]';
   var PROD_QTY_UP   = '.js-quantity-up,[data-action="increase-quantity"],[data-quantity-action="up"]';
 
-  // CARRINHO — ITEM
-  //   Temas novos  : data-store="cart-item-{product.id}"  → ID embutido no atributo
-  //   Temas antigos: detectado via rótulo da propriedade no DOM
-  //
-  // CARRINHO — CONTROLES DE QUANTIDADE (dentro do item)
-  //   Temas novos  : buttons próximos ao input numérico
-  //   Temas antigos: .js-quantity-down / .js-quantity-up / .js-quantity-input
+  // CARRINHO — seletores de item expandidos (inspirado em SuperCampos SEL_LINE_ITEM)
+  var CART_ITEM_SEL_LIST = [
+    '[data-store^="cart-item-"]',        // Anchor point oficial (todos os temas modernos)
+    '[data-component="cart.line-item"]', // Componente moderno
+    '.js-cart-item',                      // JS-targeted legado
+    '.cart-item',                         // classe genérica legada
+    'tr[data-id]',                        // layout tabela (muito legado)
+  ];
+
+  // CARRINHO — controles de quantidade
   var CART_QTY_INPUT = [
     '.js-quantity-input',
     'input[name*="quantity"]',
@@ -185,8 +204,113 @@
     '[data-action="plus"]',
   ].join(',');
 
-  // Rótulos da propriedade exibidos no carrinho (todos os idiomas suportados)
-  var CART_PROP_LABELS = ['Data do Evento', 'Fecha del Evento'];
+  // Rótulos da data do evento (todos os idiomas suportados)
+  var CART_DATE_LABELS = ['Data do Evento', 'Fecha del Evento'];
+
+  // ─── Extração de productId de um item do carrinho ─────────────────────────────
+  // Inspirado em SuperCampos getProductId(). Cobre âncoras modernas e DOM legado.
+  function getProductIdFromCart(item) {
+    var ds = item.getAttribute('data-store') || '';
+    var m = ds.match(/^cart-item-(\d+)$/);
+    if (m) return m[1];
+    var byAttr = item.getAttribute('data-product-id');
+    if (byAttr) return byAttr;
+    var inner = item.querySelector('[data-product-id]');
+    if (inner) return inner.getAttribute('data-product-id');
+    var qInput = item.querySelector('input[name^="quantity["]');
+    if (qInput) {
+      var m2 = (qInput.name || '').match(/^quantity\[(\d+)\]$/);
+      if (m2) return m2[1];
+    }
+    return null;
+  }
+
+  // ─── sessionStorage: data do evento por produto ────────────────────────────────
+  // Persiste a data selecionada para exibição no carrinho em temas legados.
+  // Inspirado em SuperCampos captureProps() + sessionStorage.
+  var _datesKey;
+  function datesStorageKey() {
+    return _datesKey || (_datesKey = 'alm_dates_' + storeNsId());
+  }
+
+  function storeDateForProduct(pid, dateVal) {
+    try {
+      var raw = sessionStorage.getItem(datesStorageKey());
+      var s = raw ? JSON.parse(raw) : {};
+      s[pid] = dateVal;
+      sessionStorage.setItem(datesStorageKey(), JSON.stringify(s));
+    } catch (e) {}
+  }
+
+  function getStoredDateForProduct(pid) {
+    try {
+      var raw = sessionStorage.getItem(datesStorageKey());
+      if (!raw) return null;
+      return JSON.parse(raw)[pid] || null;
+    } catch (e) { return null; }
+  }
+
+  // Captura a data do hidden input antes do form ser submetido.
+  function captureRentalDate() {
+    var pid = productNsId();
+    if (!pid || _rentableIds.indexOf(parseInt(pid, 10)) === -1) return;
+    var inp = document.getElementById('alm-hidden-date') ||
+              document.querySelector('input[name="' + propDateName() + '"]');
+    if (inp && inp.value) storeDateForProduct(pid, inp.value);
+  }
+
+  // ─── Detecção de propriedade nativa NS no carrinho ────────────────────────────
+  // Inspirado em SuperCampos hasNativeProperties().
+  // Evita injetar duplicata se a Nuvemshop já exibir o campo nativamente.
+  function hasNativeCartDate(container) {
+    var els = container.querySelectorAll('strong,dt,span,b,th,td,p');
+    for (var i = 0; i < els.length; i++) {
+      var txt = (els[i].textContent || '').trim();
+      for (var j = 0; j < CART_DATE_LABELS.length; j++) {
+        if (txt.indexOf(CART_DATE_LABELS[j]) === 0) return true;
+      }
+    }
+    return false;
+  }
+
+  // ─── Injeção da data no item do carrinho (temas legados) ─────────────────────
+  // Inspirado em SuperCampos injectIntoItem().
+  // Exibe "Data do Evento: YYYY-MM-DD" em temas que não renderizam properties[] nativamente.
+  var SEL_CART_NAME = [
+    '[data-component="line-item.name"]',
+    '.cart-item-name',
+    '.item-name',
+    '.js-item-name',
+    'td.name',
+  ];
+
+  function injectCartDate(container) {
+    if (container.querySelector('.nuvempro-cart-prod-pers')) return; // idempotente
+    if (hasNativeCartDate(container)) return; // NS já exibe — não duplicar
+
+    var pid = getProductIdFromCart(container);
+    var dateVal = pid ? getStoredDateForProduct(pid) : null;
+    if (!dateVal) return;
+
+    var wrapper = document.createElement('div');
+    wrapper.className = 'nuvempro-cart-prod-pers';
+    var line = document.createElement('div');
+    var strong = document.createElement('strong');
+    var span = document.createElement('span');
+    strong.textContent = (isBR() ? 'Data do Evento' : 'Fecha del Evento') + ': ';
+    span.textContent = dateVal;
+    line.appendChild(strong);
+    line.appendChild(span);
+    wrapper.appendChild(line);
+
+    var nameEl = null;
+    for (var i = 0; i < SEL_CART_NAME.length; i++) {
+      nameEl = container.querySelector(SEL_CART_NAME[i]);
+      if (nameEl) break;
+    }
+    if (nameEl) nameEl.appendChild(wrapper);
+    else container.appendChild(wrapper);
+  }
 
   // ─── GRADE DE PRODUTOS ────────────────────────────────────────────────────────
   var _processed = makeWeakSet();
@@ -201,18 +325,15 @@
     var buyBtn = findBuyBtn(item);
     if (!buyBtn) return;
 
-    // Produto-alvo URL: primeira âncora do card
     var link = item.querySelector('a[href]');
     var href = link ? link.href : location.href;
 
-    // Cria <a> com as mesmas classes do botão (herda visual do tema intacto)
     var a = document.createElement('a');
     a.href = href;
     a.className = buyBtn.className;
     a.setAttribute('aria-label', TXT.rent());
     a.setAttribute('data-alm', '1');
 
-    // Preserva ícone SVG do botão original, se houver
     var svg = buyBtn.querySelector('svg')
            || (buyBtn.parentElement && buyBtn.parentElement.querySelector('svg'));
     if (svg) {
@@ -224,7 +345,6 @@
       a.appendChild(document.createTextNode(TXT.rent()));
     }
 
-    // Remove o form/botão de compra rápida; insere link de aluguel
     var form = closestProductForm(buyBtn);
     if (form && item.contains(form)) {
       form.insertAdjacentElement('afterend', a);
@@ -247,58 +367,98 @@
     if (_cartDone.has(container)) return;
     _cartDone.add(container);
 
-    // Desabilita input de quantidade
+    // Classe CSS: stylesheet desabilita controles de quantidade e oculta botões +/-
+    if (container.classList) container.classList.add('alm-cart-item');
+
+    // Fallback inline: cobre temas cuja especificidade supera !important no stylesheet
     var inputs = container.querySelectorAll(CART_QTY_INPUT);
     for (var i = 0; i < inputs.length; i++) {
       inputs[i].setAttribute('disabled', '');
       inputs[i].style.cssText += ';pointer-events:none;opacity:0.55;cursor:not-allowed;';
     }
-
-    // Oculta botões + e -
     var btns = container.querySelectorAll(CART_QTY_BTNS);
     for (var j = 0; j < btns.length; j++) btns[j].style.display = 'none';
+
+    // Exibe data em temas que não renderizam properties[] nativamente
+    injectCartDate(container);
   }
 
-  // IDs alugáveis em cache para uso no processCart (sem nova requisição)
   var _rentableIds = [];
 
   function processCart() {
-    // ── Estratégia 1: Temas novos ──────────────────────────────────────────────
-    // Anchor point: data-store="cart-item-{product.id}" (NS Anchor Points Doc)
-    // O ID do produto está embutido no atributo → comparação direta com rentableIds.
-    var newItems = document.querySelectorAll('[data-store^="cart-item-"]');
-    for (var i = 0; i < newItems.length; i++) {
-      var item = newItems[i];
-      var ds = item.getAttribute('data-store') || '';
-      var pid = parseInt(ds.slice(10), 10); // 'cart-item-'.length === 10
-      if (pid && _rentableIds.indexOf(pid) >= 0) applyCartItem(item);
+    // ── Estratégia 1: seletores expandidos + productId ───────────────────────────
+    // Cobre anchor points (ID no atributo) e temas legados (extração por DOM).
+    for (var si = 0; si < CART_ITEM_SEL_LIST.length; si++) {
+      var items = document.querySelectorAll(CART_ITEM_SEL_LIST[si]);
+      for (var ii = 0; ii < items.length; ii++) {
+        var item = items[ii];
+        if (_cartDone.has(item)) continue;
+
+        // Anchor point: ID embutido no atributo (mais confiável)
+        var attrDs = item.getAttribute('data-store') || '';
+        if (attrDs.indexOf('cart-item-') === 0) {
+          var anchorPid = parseInt(attrDs.slice(10), 10);
+          if (anchorPid && _rentableIds.indexOf(anchorPid) >= 0) {
+            applyCartItem(item);
+            continue;
+          }
+          continue; // tem anchor point mas não é produto alugável — skip
+        }
+
+        // Outros seletores: tenta extrair productId do contexto
+        var ctxPid = getProductIdFromCart(item);
+        if (ctxPid && _rentableIds.indexOf(parseInt(ctxPid, 10)) >= 0) {
+          applyCartItem(item);
+        }
+      }
     }
 
-    // ── Estratégia 2: Todos os temas (texto da propriedade) ───────────────────
-    // Detecta pelo rótulo "Data do Evento" / "Fecha del Evento" exibido pelo NS.
-    // Cobre temas antigos e serve de fallback para temas componentizados onde
-    // o anchor point do item ainda não foi identificado.
+    // ── Estratégia 2: rótulo da propriedade no DOM (fallback universal) ──────────
+    // Funciona em qualquer tema onde NS já exibe "Data do Evento" nativamente,
+    // quando o anchor point não está disponível.
     var candidates = document.querySelectorAll('strong,dt,span,b,th,td,p');
     for (var j = 0; j < candidates.length; j++) {
       var txt = (candidates[j].textContent || candidates[j].innerText || '').trim();
       if (!txt || txt.length > 80) continue;
 
       var isLabel = false;
-      for (var k = 0; k < CART_PROP_LABELS.length; k++) {
-        var lbl = CART_PROP_LABELS[k];
-        if (txt === lbl || txt.indexOf(lbl + ':') === 0 || txt.indexOf(lbl + ' :') === 0) {
+      for (var k = 0; k < CART_DATE_LABELS.length; k++) {
+        var lbl = CART_DATE_LABELS[k];
+        if (txt === lbl || txt.indexOf(lbl + ':') === 0 || txt.indexOf(lbl + ' :') === 0) {
           isLabel = true; break;
         }
       }
       if (!isLabel) continue;
 
-      // Sobe no DOM até achar um ancestral com controles de quantidade
       var p = candidates[j].parentElement;
       for (var depth = 0; depth < 14 && p && p !== document.body; depth++) {
         if (_cartDone.has(p)) break;
         if (p.querySelector(CART_QTY_INPUT)) { applyCartItem(p); break; }
         p = p.parentElement;
       }
+    }
+  }
+
+  // ─── Patch de LS.addToCartEnhanced ────────────────────────────────────────────
+  // Inspirado em SuperCampos initCartDisplay() → tryPatch().
+  // Captura a data ANTES de adicionar ao carrinho e re-processa o cart após a resposta.
+  var _patchTries = 0;
+  function tryPatchAddToCart() {
+    if (window.LS && typeof window.LS.addToCartEnhanced === 'function') {
+      var orig = window.LS.addToCartEnhanced;
+      window.LS.addToCartEnhanced = function () {
+        captureRentalDate();
+        var args = Array.prototype.slice.call(arguments);
+        var origCb = typeof args[5] === 'function' ? args[5] : function () {};
+        args[5] = function () {
+          origCb.apply(this, arguments);
+          setTimeout(processCart, 600);
+          setTimeout(processCart, 2200);
+        };
+        return orig.apply(this, args);
+      };
+    } else if (_patchTries++ < 25) {
+      setTimeout(tryPatchAddToCart, 400);
     }
   }
 
@@ -324,10 +484,8 @@
 
     var form = closestProductForm(buyBtn);
 
-    // ── Desabilita botão imediatamente ────────────────────────────────────────
     setBtn(buyBtn, 'disabled', TXT.defineDate());
 
-    // ── Date picker visual ────────────────────────────────────────────────────
     var wrap = document.createElement('div');
     wrap.className = 'alm-date-wrap';
     wrap.style.cssText = 'margin:16px 0 10px;';
@@ -342,7 +500,6 @@
     dateInput.id = 'alm-date';
     dateInput.className = 'form-control';
     dateInput.style.cssText = 'max-width:280px;padding:8px 12px;font-size:14px;border:1px solid #ccc;border-radius:6px;background:#fff;color:#333;cursor:pointer;';
-    // Validação 3: data mínima = hoje + diasAntes
     dateInput.min = toISO(addDays(today0(), cfg.diasAntes));
 
     var msgEl = document.createElement('p');
@@ -352,36 +509,29 @@
     wrap.appendChild(dateInput);
     wrap.appendChild(msgEl);
 
-    // ── Hidden input submetido no form → properties[Data do Evento] ───────────
-    // A Nuvemshop exibe automaticamente esse campo como propriedade no carrinho.
     var hiddenDate = document.createElement('input');
     hiddenDate.type = 'hidden';
     hiddenDate.name = propDateName();
     hiddenDate.id = 'alm-hidden-date';
 
-    // Insere picker antes do container do botão (compatível com todos os temas)
     var anchor = (buyBtn.parentElement && buyBtn.parentElement.parentElement)
       ? buyBtn.parentElement.parentElement
       : (buyBtn.parentElement || buyBtn);
     anchor.insertAdjacentElement('beforebegin', wrap);
 
-    // Adiciona hidden input dentro do form para ser submetido
     if (form) form.appendChild(hiddenDate);
 
-    // ── Validação + verificação de disponibilidade ─────────────────────────────
     function check() {
       var val = dateInput.value;
       var selected = fromISO(val);
       hiddenDate.value = val || '';
 
-      // Validação 1: campo obrigatório
       if (!selected) {
         setBtn(buyBtn, 'disabled', TXT.defineDate());
         msgEl.textContent = ''; msgEl.style.color = '';
         return;
       }
 
-      // Validação 2 + 3: data futura com antecedência mínima
       var minDate = addDays(today0(), cfg.diasAntes);
       if (selected.getTime() < minDate.getTime()) {
         setBtn(buyBtn, 'disabled', TXT.earlyDate());
@@ -390,7 +540,6 @@
         return;
       }
 
-      // Validação 4 + 5: disponibilidade no intervalo [data−diasAntes, data+diasDepois]
       var qty = getQty();
       setBtn(buyBtn, 'checking', TXT.checking());
       msgEl.textContent = '';
@@ -426,7 +575,6 @@
 
     dateInput.addEventListener('change', function () { debounce(check, 350); });
 
-    // Reagir a mudanças de quantidade (todos os temas)
     var qInput = findProdQtyInput();
     if (qInput) {
       qInput.addEventListener('change', function () { if (dateInput.value) debounce(check, 350); });
@@ -438,33 +586,37 @@
     if (qUp)   qUp.addEventListener('click',   function () { if (dateInput.value) setTimeout(check, 60); });
   }
 
-  // ─── Observer unificado (grade + modal do carrinho) ───────────────────────────
+  // ─── Observer unificado + setInterval safety net ─────────────────────────────
   function observeAll(ids, skipPid) {
-    if (!window.MutationObserver) return;
-    var cartTimer;
-    var obs = new MutationObserver(function (muts) {
-      for (var i = 0; i < muts.length; i++) {
-        var added = muts[i].addedNodes;
-        for (var j = 0; j < added.length; j++) {
-          var n = added[j];
-          if (!n.querySelectorAll) continue;
-          if (!ids.length) continue;
+    if (window.MutationObserver) {
+      var cartTimer;
+      var obs = new MutationObserver(function (muts) {
+        for (var i = 0; i < muts.length; i++) {
+          var added = muts[i].addedNodes;
+          for (var j = 0; j < added.length; j++) {
+            var n = added[j];
+            if (!n.querySelectorAll) continue;
+            if (!ids.length) continue;
 
-          // Temas novos: data-store="product-item-{id}"
-          // Temas antigos: data-product-id="{id}"
-          var ds = (n.getAttribute && n.getAttribute('data-store')) || '';
-          if (ds.indexOf('product-item-') === 0 || n.hasAttribute('data-product-id')) {
-            replaceGridItem(n, ids, skipPid);
+            var ds = (n.getAttribute && n.getAttribute('data-store')) || '';
+            if (ds.indexOf('product-item-') === 0 || n.hasAttribute('data-product-id')) {
+              replaceGridItem(n, ids, skipPid);
+            }
+            var inner = n.querySelectorAll(GRID_SEL);
+            for (var k = 0; k < inner.length; k++) replaceGridItem(inner[k], ids, skipPid);
           }
-          var inner = n.querySelectorAll(GRID_SEL);
-          for (var k = 0; k < inner.length; k++) replaceGridItem(inner[k], ids, skipPid);
         }
-      }
-      // Debounce: o modal do carrinho injeta vários nós em sequência
-      clearTimeout(cartTimer);
-      cartTimer = setTimeout(processCart, 200);
-    });
-    obs.observe(document.body, { childList: true, subtree: true });
+        clearTimeout(cartTimer);
+        cartTimer = setTimeout(processCart, 200);
+      });
+      obs.observe(document.body, { childList: true, subtree: true });
+    }
+
+    // Safety net: garante processamento de novos itens do carrinho (AJAX, modal, rerenders).
+    // Inspirado em C# BloquearQtdeItensAlugaveisStoreCart → setInterval(..., 2500).
+    setInterval(function () {
+      if (_rentableIds.length) processCart();
+    }, 2500);
   }
 
   // ─── Inicialização ────────────────────────────────────────────────────────────
@@ -475,15 +627,24 @@
 
     var pid = productNsId();
 
-    // 1. Busca IDs alugáveis → processa grade e carrinho em TODAS as páginas
+    injectAlmCSS();
+    tryPatchAddToCart();
+
+    // Captura data no submit do form (cobre temas que não usam LS.addToCartEnhanced)
+    if (pid) {
+      var captureForm = document.querySelector('[data-store^="product-form-"]') ||
+                        document.querySelector('form[action*="cart"]') ||
+                        document.querySelector('form[action*="carrinho"]');
+      if (captureForm) captureForm.addEventListener('submit', captureRentalDate, true);
+    }
+
     jsonFetch(apiBase + '/storefront/' + sid + '/rentable-ids', function (err, data) {
       _rentableIds = (data && Array.isArray(data.ids)) ? data.ids : [];
-      processGrid(_rentableIds, pid);  // substitui botões na grade
-      processCart();                   // desabilita qty no carrinho já renderizado
-      observeAll(_rentableIds, pid);   // grade + modal do carrinho (dinâmico)
+      processGrid(_rentableIds, pid);
+      processCart();
+      observeAll(_rentableIds, pid);
     });
 
-    // 2. Comportamento específico da página de produto
     if (!pid) return;
 
     jsonFetch(apiBase + '/storefront/' + sid + '/products/' + pid + '/config', function (err, data) {
