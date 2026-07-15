@@ -21,6 +21,11 @@ app.set('trust proxy', 1);
 // ─── Security headers
 app.use(helmet());
 
+// ─── Storefront (vitrine do lojista): CORS aberto, montado ANTES do CORS global
+// para que requisições de qualquer origem cheguem ao router sem serem bloqueadas.
+const storefrontRouter = require('./routes/storefront');
+app.use('/storefront', storefrontRouter);
+
 // ─── CORS
 const allowedOrigins = [
   process.env.FRONTEND_URL,
