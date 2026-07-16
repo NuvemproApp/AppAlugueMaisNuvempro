@@ -5,14 +5,14 @@
       "name": "frontend",
       "runtimeExecutable": "npm",
       "runtimeArgs": ["run", "dev"],
-      "cwd": "D:\\AI\\nuvempro-app-template\\frontend",
+      "cwd": "C:\\NuvemproApps\\aluguemais-admin-v2\\frontend",
       "port": 5173
     },
     {
       "name": "admin-frontend",
       "runtimeExecutable": "npm",
       "runtimeArgs": ["run", "dev"],
-      "cwd": "D:\\AI\\nuvempro-app-template\\admin-frontend",
+      "cwd": "C:\\NuvemproApps\\aluguemais-admin-v2\\admin-frontend",
       "port": 5174
     }
   ]
