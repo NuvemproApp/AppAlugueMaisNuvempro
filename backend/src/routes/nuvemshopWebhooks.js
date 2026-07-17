@@ -1,8 +1,8 @@
 const express = require('express');
 const crypto = require('crypto');
-const axios = require('axios');
 const prisma = require('../lib/prisma');
-const { removeAllWebhooks } = require('../config/nuvemshop');
+const { removeAllWebhooks, createNuvemshopClient } = require('../config/nuvemshop');
+const { RENTAL_STATUS, ACTIVE_STATUSES } = require('../lib/rentalStatus');
 
 const router = express.Router();
 
@@ -11,6 +11,11 @@ const router = express.Router();
  * body com o client_secret). Tolerante a encoding (hex ou base64) e timing-safe.
  * Retorna: true = confere | false = header presente mas NÃO confere | null = não
  * dá para verificar (sem secret/header/raw body — ex.: chamada manual/dev).
+ *
+ * IMPORTANTE: todo handler que muta dados deve exigir `checkHmac(req) === true`
+ * (nunca apenas `!== false`) — `null` significa "não verificável", não "confie
+ * mesmo assim". Tratar `null` como passável permite que qualquer requisição sem
+ * o header de assinatura seja aceita como se fosse da Nuvemshop.
  */
 function checkHmac(req) {
   const secret = process.env.NUVEMSHOP_CLIENT_SECRET;
@@ -27,12 +32,9 @@ function checkHmac(req) {
 }
 
 /**
- * Webhooks da Nuvemshop. Configurados no Partner Portal apontando para estas URLs.
+ * Webhooks da Nuvemshop. Configurados no Partner Portal (LGPD) ou registrados
+ * dinamicamente via config/nuvemshop.js (app/uninstalled, order/created, order/cancelled).
  * Body: { store_id, event } (JSON). Responder 200 é obrigatório para a homologação.
- *
- * HMAC (header x-linkedstore-hmac-sha256) é hardening futuro — exige raw body nesta
- * rota. Por ora processamos sem verificação estrita: as ações são não-destrutivas
- * (apenas sinalizam a desinstalação; a exclusão de dados é manual no admin).
  */
 
 // Marca a data de desinstalação na loja. Idempotente: não sobrescreve data anterior.
@@ -65,8 +67,8 @@ async function markUninstalled(storeId) {
  * POST /webhooks/app/uninstalled — a loja desinstalou o app.
  */
 router.post('/app/uninstalled', async (req, res) => {
-  if (checkHmac(req) === false) {
-    console.warn('[nuvemshop] app/uninstalled com HMAC invalido — ignorado');
+  if (checkHmac(req) !== true) {
+    console.warn('[nuvemshop] app/uninstalled sem HMAC válido — ignorado');
     return res.status(401).json({ error: 'Invalid HMAC.' });
   }
   const storeId = req.body?.store_id;
@@ -80,12 +82,12 @@ router.post('/app/uninstalled', async (req, res) => {
  * Também marca a desinstalação (rede de segurança caso app/uninstalled não chegue).
  */
 router.post('/store/redact', async (req, res) => {
-  // LGPD exige sempre 200 (homologação) — em HMAC inválido apenas logamos e
+  // LGPD exige sempre 200 (homologação) — em HMAC não confirmado apenas logamos e
   // NÃO marcamos a desinstalação, evitando poluição por requisição forjada.
   const hmac = checkHmac(req);
   const storeId = req.body?.store_id;
   console.log(`[nuvemshop][LGPD] store/redact store_id=${storeId} hmac=${hmac}`);
-  if (hmac !== false) await markUninstalled(storeId);
+  if (hmac === true) await markUninstalled(storeId);
   res.status(200).json({ success: true });
 });
 
@@ -123,20 +125,29 @@ function extractEventDate(properties) {
 
 /**
  * Busca o pedido completo na API da Nuvemshop.
- * Usamos api.tiendanube.com — funciona para BR e LATAM.
  */
 async function fetchNsOrder(store, orderId) {
-  const { data } = await axios.get(
-    `https://api.tiendanube.com/v1/${store.nuvemshopId}/orders/${orderId}`,
-    {
-      headers: {
-        Authentication: `bearer ${store.accessToken}`,
-        'User-Agent': `AlugueMais (${process.env.APP_EMAIL || 'contato@aluguemais.nuvempro.com'})`,
-      },
-      timeout: 15000,
-    }
-  );
+  const client = createNuvemshopClient(store.nuvemshopId, store.accessToken);
+  const { data } = await client.get(`/orders/${orderId}`, { timeout: 15000 });
   return data;
+}
+
+/**
+ * Soma a quantidade de aluguéis ativos (agendado/enviado) de um produto cujo
+ * intervalo de reserva sobrepõe [reservationStart, reservationEnd].
+ */
+async function sumOverlappingQuantity(storeId, productId, reservationStart, reservationEnd) {
+  const overlapping = await prisma.rental.findMany({
+    where: {
+      storeId,
+      productId,
+      status: { in: ACTIVE_STATUSES },
+      reservationStart: { lte: reservationEnd },
+      reservationEnd: { gte: reservationStart },
+    },
+    select: { quantity: true },
+  });
+  return overlapping.reduce((sum, r) => sum + (r.quantity || 0), 0);
 }
 
 /**
@@ -159,27 +170,38 @@ async function processOrderCreated(storeNsId, orderId) {
     return;
   }
 
-  // 2. Pedido completo via API NS (inclui products[].properties)
+  // 2. Pedido completo via API NS (inclui products[].properties e status atual do pedido)
   const order = await fetchNsOrder(store, orderId);
   if (!order || !Array.isArray(order.products) || !order.products.length) {
     console.log(`[order/created] pedido ${orderId} vazio ou inválido — ignorado`);
     return;
   }
 
-  // 3. Produtos alugáveis da loja (uma única query)
+  // Se por essa altura o pedido já está cancelado (ex.: order/cancelled processado
+  // antes deste webhook, ou cancelamento automático quase imediato), registra o
+  // aluguel direto como cancelado em vez de agendado — evita a corrida onde
+  // orders/cancelled não encontra nada pra cancelar porque o Rental ainda não existia.
+  const initialStatus = order.cancelled_at ? RENTAL_STATUS.CANCELADO : RENTAL_STATUS.AGENDADO;
+
+  // 3. Produtos alugáveis da loja (uma única query, já com o estoque configurado)
   const rentables = await prisma.rentableProduct.findMany({
     where: { storeId: store.id, status: 1 },
-    select: { productId: true, diasAntes: true, diasDepois: true },
+    select: { productId: true, diasAntes: true, diasDepois: true, estoque: true },
   });
   if (!rentables.length) return;
 
   const rentableMap = new Map(rentables.map((r) => [r.productId, r]));
 
-  // 4. Para cada produto do pedido, registra o aluguel se for alugável
-  for (const item of order.products) {
+  // 4. Para cada produto do pedido, registra o aluguel se for alugável.
+  // Usa o índice do item como parte da identidade do aluguel (junto ao id da NS,
+  // se existir) — dois itens do mesmo produto no mesmo pedido não colidem mais.
+  for (let index = 0; index < order.products.length; index++) {
+    const item = order.products[index];
     const productId = String(item.product_id);
     const rentable = rentableMap.get(productId);
     if (!rentable) continue;
+
+    const lineItemId = String(item.id ?? index);
 
     // Extrai a data do evento (multi-idioma)
     const rawDate = extractEventDate(item.properties);
@@ -200,14 +222,29 @@ async function processOrderCreated(storeNsId, orderId) {
 
     const reservationStart = new Date(eventDate.getTime() - rentable.diasAntes  * 86400000);
     const reservationEnd   = new Date(eventDate.getTime() + rentable.diasDepois * 86400000);
+    const quantity = item.quantity || 1;
+
+    // Checagem de capacidade: não bloqueia a criação (o pedido já foi pago), mas
+    // deixa um alerta visível nos logs quando o total sobreposto excede o estoque
+    // configurado — decisão de negócio de como agir fica com o lojista por ora.
+    if (initialStatus !== RENTAL_STATUS.CANCELADO) {
+      const alreadyBooked = await sumOverlappingQuantity(store.id, productId, reservationStart, reservationEnd);
+      if (alreadyBooked + quantity > rentable.estoque) {
+        console.warn(
+          `[order/created] ESTOQUE EXCEDIDO produto ${productId} pedido ${orderId}: ` +
+          `${alreadyBooked + quantity} reservado(s) sobrepondo o período, estoque configurado=${rentable.estoque}`
+        );
+      }
+    }
 
     // Upsert idempotente: reenvio de webhook não cria duplicata
     await prisma.rental.upsert({
       where: {
-        storeId_orderId_productId: {
+        storeId_orderId_productId_lineItemId: {
           storeId: store.id,
           orderId: String(orderId),
           productId,
+          lineItemId,
         },
       },
       update: {}, // já existe → não sobrescreve (webhook retentado)
@@ -215,9 +252,10 @@ async function processOrderCreated(storeNsId, orderId) {
         storeId:        store.id,
         productId,
         orderId:        String(orderId),
+        lineItemId,
         orderNumber:    order.number   || 0,
-        status:         1,             // 1 = agendado
-        quantity:       item.quantity  || 1,
+        status:         initialStatus,
+        quantity,
         eventDate,
         reservationStart,
         reservationEnd,
@@ -228,8 +266,8 @@ async function processOrderCreated(storeNsId, orderId) {
 
     console.log(
       `[order/created] aluguel registrado ` +
-      `store=${store.id} order=${orderId} product=${productId} ` +
-      `evento=${rawDate} reserva=[${reservationStart.toISOString().slice(0, 10)},${reservationEnd.toISOString().slice(0, 10)}]`
+      `store=${store.id} order=${orderId} product=${productId} item=${lineItemId} ` +
+      `status=${initialStatus} evento=${rawDate} reserva=[${reservationStart.toISOString().slice(0, 10)},${reservationEnd.toISOString().slice(0, 10)}]`
     );
   }
 }
@@ -240,9 +278,8 @@ async function processOrderCreated(storeNsId, orderId) {
  * Sempre responde 200: a NS não deve retentar por falhas internas.
  */
 router.post('/orders/created', async (req, res) => {
-  const hmac = checkHmac(req);
-  if (hmac === false) {
-    console.warn('[nuvemshop] orders/created com HMAC inválido — ignorado');
+  if (checkHmac(req) !== true) {
+    console.warn('[nuvemshop] orders/created sem HMAC válido — ignorado');
     return res.status(401).json({ error: 'Invalid HMAC.' });
   }
 
@@ -268,14 +305,13 @@ router.post('/orders/created', async (req, res) => {
 /**
  * POST /webhooks/orders/cancelled — pedido cancelado na Nuvemshop.
  * Cancela automaticamente os aluguéis desse pedido que ainda estejam
- * agendados (1) ou enviados (2) — nunca mexe em aluguéis já devolvidos (3),
- * que já concluíram seu ciclo antes do cancelamento chegar.
+ * agendados ou enviados — nunca mexe em aluguéis já devolvidos, que já
+ * concluíram seu ciclo antes do cancelamento chegar.
  * Sempre responde 200: a NS não deve retentar por falhas internas.
  */
 router.post('/orders/cancelled', async (req, res) => {
-  const hmac = checkHmac(req);
-  if (hmac === false) {
-    console.warn('[nuvemshop] orders/cancelled com HMAC inválido — ignorado');
+  if (checkHmac(req) !== true) {
+    console.warn('[nuvemshop] orders/cancelled sem HMAC válido — ignorado');
     return res.status(401).json({ error: 'Invalid HMAC.' });
   }
 
@@ -297,8 +333,8 @@ router.post('/orders/cancelled', async (req, res) => {
 
     if (store) {
       const { count } = await prisma.rental.updateMany({
-        where: { storeId: store.id, orderId: String(orderId), status: { in: [1, 2] } },
-        data: { status: 0 }, // 0 = cancelado
+        where: { storeId: store.id, orderId: String(orderId), status: { in: ACTIVE_STATUSES } },
+        data: { status: RENTAL_STATUS.CANCELADO },
       });
       console.log(`[order/cancelled] ${count} aluguel(éis) cancelado(s) store=${store.id} order=${orderId}`);
     }

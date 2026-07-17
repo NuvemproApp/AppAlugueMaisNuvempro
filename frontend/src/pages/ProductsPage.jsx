@@ -25,12 +25,13 @@ function ActionsMenu({ onEdit, onDelete, labelEdit, labelDelete }) {
   const ref = useRef(null);
 
   useEffect(() => {
+    if (!open) return; // só ouve clique fora enquanto o menu está de fato aberto
     function handler(e) {
       if (ref.current && !ref.current.contains(e.target)) setOpen(false);
     }
     document.addEventListener('mousedown', handler);
     return () => document.removeEventListener('mousedown', handler);
-  }, []);
+  }, [open]);
 
   return (
     <Box ref={ref} style={{ position: 'relative', display: 'inline-block' }}>

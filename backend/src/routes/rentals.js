@@ -2,6 +2,7 @@ const express = require('express');
 const prisma = require('../lib/prisma');
 const { AppError } = require('../lib/errors');
 const { requireAuth } = require('../middleware/auth');
+const { RENTAL_STATUS } = require('../lib/rentalStatus');
 
 const router = express.Router();
 router.use(requireAuth);
@@ -12,7 +13,19 @@ const CRITERIO_FIELD = {
   3: 'reservationEnd',
 };
 
-const STATUS_VALUES = [0, 1, 2, 3];
+const STATUS_VALUES = Object.values(RENTAL_STATUS);
+const MAX_RANGE_MS = 2 * 365 * 86400000; // 2 anos — teto de segurança pro board Kanban
+
+// ─── Helper: busca aluguel da própria loja ou lança 404 ──────────────────────
+async function findOwnedRental(id, storeId) {
+  const rental = await prisma.rental.findFirst({
+    where: { id: Number(id), storeId },
+  });
+  if (!rental) {
+    throw new AppError('Aluguel não encontrado.', 404, 'NOT_FOUND');
+  }
+  return rental;
+}
 
 // ─── GET /api/rentals ── lista aluguéis da loja para o board Kanban ──────────
 router.get('/', async (req, res, next) => {
@@ -21,9 +34,15 @@ router.get('/', async (req, res, next) => {
     const field = CRITERIO_FIELD[criterio];
 
     const dataFinal = req.query.dataFinal ? new Date(`${req.query.dataFinal}T23:59:59`) : new Date();
-    const dataInicial = req.query.dataInicial
+    let dataInicial = req.query.dataInicial
       ? new Date(`${req.query.dataInicial}T00:00:00`)
       : new Date(dataFinal.getTime() - 7 * 86400000);
+
+    // Teto de segurança: um intervalo maior que isso não faz sentido pro board e
+    // arrisca devolver dezenas de milhares de linhas de uma vez.
+    if (dataFinal.getTime() - dataInicial.getTime() > MAX_RANGE_MS) {
+      dataInicial = new Date(dataFinal.getTime() - MAX_RANGE_MS);
+    }
 
     const [rentals, rentableProducts] = await Promise.all([
       prisma.rental.findMany({
@@ -62,12 +81,7 @@ router.patch('/:id/status', async (req, res, next) => {
       throw new AppError('status inválido.', 400, 'INVALID_STATUS');
     }
 
-    const existing = await prisma.rental.findFirst({
-      where: { id: Number(id), storeId: req.store.id },
-    });
-    if (!existing) {
-      throw new AppError('Aluguel não encontrado.', 404, 'NOT_FOUND');
-    }
+    await findOwnedRental(id, req.store.id);
 
     const rental = await prisma.rental.update({
       where: { id: Number(id) },

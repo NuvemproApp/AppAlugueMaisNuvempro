@@ -1,5 +1,6 @@
 const express = require('express');
 const prisma = require('../lib/prisma');
+const { ACTIVE_STATUSES } = require('../lib/rentalStatus');
 
 const router = express.Router();
 
@@ -125,7 +126,7 @@ router.get('/:storeId/products/:productId/availability', async function (req, re
         where: {
           storeId:          store.id,
           productId:        String(req.params.productId),
-          status:           { in: [1, 2] },
+          status:           { in: ACTIVE_STATUSES },
           reservationStart: { lte: toDate },
           reservationEnd:   { gte: fromDate },
         },

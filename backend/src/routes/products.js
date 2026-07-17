@@ -1,29 +1,24 @@
 const express = require('express');
-const axios = require('axios');
 const prisma = require('../lib/prisma');
 const { AppError } = require('../lib/errors');
 const { requireAuth } = require('../middleware/auth');
+const { createNuvemshopClient } = require('../config/nuvemshop');
+const { ACTIVE_STATUSES } = require('../lib/rentalStatus');
 
 const router = express.Router();
 router.use(requireAuth);
 
 // ─── Helper: busca produtos da Nuvemshop (paginado) ──────────────────────────
 async function fetchNuvemshopProducts(store) {
+  const client = createNuvemshopClient(store.nuvemshopId, store.accessToken);
   const products = [];
   let page = 1;
 
   while (true) {
-    const { data } = await axios.get(
-      `https://api.tiendanube.com/v1/${store.nuvemshopId}/products`,
-      {
-        params: { per_page: 200, page, fields: 'id,name,images' },
-        headers: {
-          Authentication: `bearer ${store.accessToken}`,
-          'User-Agent': `AlugueMais (${process.env.APP_EMAIL || 'contato@aluguemais.nuvempro.com'})`,
-        },
-        timeout: 10000,
-      }
-    );
+    const { data } = await client.get('/products', {
+      params: { per_page: 200, page, fields: 'id,name,images' },
+      timeout: 10000,
+    });
 
     if (!data || data.length === 0) break;
     products.push(...data);
@@ -43,6 +38,36 @@ function extractNameImage(nsProduct) {
   return { name, image };
 }
 
+// ─── Helper: busca produto alugável da própria loja ou lança 404 ─────────────
+async function findOwnedProduct(id, storeId) {
+  const product = await prisma.rentableProduct.findFirst({
+    where: { id: Number(id), storeId },
+  });
+  if (!product) {
+    throw new AppError('Produto não encontrado.', 404, 'NOT_FOUND');
+  }
+  return product;
+}
+
+// ─── Helper: valida os campos numéricos de um produto alugável ───────────────
+function validateProductFields({ status, diasAntes, diasDepois, estoque }) {
+  const errors = [];
+  const checkNonNegativeInt = (label, value) => {
+    if (value === undefined) return;
+    const n = Number(value);
+    if (!Number.isInteger(n) || n < 0) errors.push(`${label} deve ser um número inteiro não-negativo.`);
+  };
+
+  if (status !== undefined && ![0, 1].includes(Number(status))) {
+    errors.push('status deve ser 0 (inativo) ou 1 (ativo).');
+  }
+  checkNonNegativeInt('diasAntes', diasAntes);
+  checkNonNegativeInt('diasDepois', diasDepois);
+  checkNonNegativeInt('estoque', estoque);
+
+  return errors;
+}
+
 // ─── GET /api/products ── lista produtos alugáveis (sem chamada externa) ─────
 router.get('/', async (req, res, next) => {
   try {
@@ -53,7 +78,7 @@ router.get('/', async (req, res, next) => {
       }),
       prisma.rental.groupBy({
         by: ['productId'],
-        where: { storeId: req.store.id, status: { in: [1, 2] } },
+        where: { storeId: req.store.id, status: { in: ACTIVE_STATUSES } },
         _sum: { quantity: true },
       }),
     ]);
@@ -108,6 +133,11 @@ router.post('/', async (req, res, next) => {
       throw new AppError('productId é obrigatório.', 400, 'MISSING_PRODUCT_ID');
     }
 
+    const validationErrors = validateProductFields({ status, diasAntes, diasDepois, estoque });
+    if (validationErrors.length) {
+      throw new AppError(validationErrors.join(' '), 400, 'INVALID_FIELDS');
+    }
+
     const existing = await prisma.rentableProduct.findUnique({
       where: { storeId_productId: { storeId: req.store.id, productId: String(productId) } },
     });
@@ -119,17 +149,11 @@ router.post('/', async (req, res, next) => {
     let nuvemshopName = null;
     let nuvemshopImage = null;
     try {
-      const { data } = await axios.get(
-        `https://api.tiendanube.com/v1/${req.store.nuvemshopId}/products/${productId}`,
-        {
-          params: { fields: 'id,name,images' },
-          headers: {
-            Authentication: `bearer ${req.store.accessToken}`,
-            'User-Agent': `AlugueMais (${process.env.APP_EMAIL || 'contato@aluguemais.nuvempro.com'})`,
-          },
-          timeout: 8000,
-        }
-      );
+      const client = createNuvemshopClient(req.store.nuvemshopId, req.store.accessToken);
+      const { data } = await client.get(`/products/${productId}`, {
+        params: { fields: 'id,name,images' },
+        timeout: 8000,
+      });
       const extracted = extractNameImage(data);
       nuvemshopName = extracted.name || null;
       nuvemshopImage = extracted.image || null;
@@ -162,12 +186,12 @@ router.patch('/:id', async (req, res, next) => {
     const { id } = req.params;
     const { status, diasAntes, diasDepois, estoque } = req.body;
 
-    const existing = await prisma.rentableProduct.findFirst({
-      where: { id: Number(id), storeId: req.store.id },
-    });
-    if (!existing) {
-      throw new AppError('Produto não encontrado.', 404, 'NOT_FOUND');
+    const validationErrors = validateProductFields({ status, diasAntes, diasDepois, estoque });
+    if (validationErrors.length) {
+      throw new AppError(validationErrors.join(' '), 400, 'INVALID_FIELDS');
     }
+
+    await findOwnedProduct(id, req.store.id);
 
     const updated = await prisma.rentableProduct.update({
       where: { id: Number(id) },
@@ -190,12 +214,7 @@ router.delete('/:id', async (req, res, next) => {
   try {
     const { id } = req.params;
 
-    const existing = await prisma.rentableProduct.findFirst({
-      where: { id: Number(id), storeId: req.store.id },
-    });
-    if (!existing) {
-      throw new AppError('Produto não encontrado.', 404, 'NOT_FOUND');
-    }
+    await findOwnedProduct(id, req.store.id);
 
     await prisma.rentableProduct.delete({ where: { id: Number(id) } });
 

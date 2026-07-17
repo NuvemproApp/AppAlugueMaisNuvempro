@@ -5,6 +5,7 @@ const { AppError } = require('../lib/errors');
 const { exchangeCodeForToken, fetchStoreInfo, registerWebhooks } = require('../config/nuvemshop');
 const { requireAuth } = require('../middleware/auth');
 const { authLimiter } = require('../middleware/rateLimiter');
+const { normalizeTrialDays } = require('../lib/trial');
 
 const router = express.Router();
 
@@ -30,14 +31,11 @@ router.get('/callback', authLimiter, async (req, res, next) => {
     }
 
     // Lê configuração de trial do AdminConfig (fallback para TRIAL_DAYS do .env)
-    let trialDays = parseInt(process.env.TRIAL_DAYS) || 7;
+    const fallbackTrialDays = parseInt(process.env.TRIAL_DAYS) || 7;
+    let trialDays = fallbackTrialDays;
     try {
-      const trialConfigs = await prisma.adminConfig.findMany({
-        where: { key: { in: ['trial_mode', 'trial_days'] } },
-      });
-      const cfgMap = {};
-      for (const c of trialConfigs) cfgMap[c.key] = c.value;
-      if (cfgMap['trial_days']) trialDays = parseInt(cfgMap['trial_days']) || trialDays;
+      const trialConfig = await prisma.adminConfig.findFirst({ where: { key: 'trial_days' } });
+      trialDays = normalizeTrialDays(trialConfig?.value, fallbackTrialDays);
     } catch { /* usa fallback */ }
 
     const trialEndsAt = new Date();
@@ -153,12 +151,12 @@ router.post('/dev-token', async (req, res, next) => {
 
     if (!store) {
       // Create a dev store
-      let devTrialDays = parseInt(process.env.TRIAL_DAYS) || 7;
+      const fallbackTrialDays = parseInt(process.env.TRIAL_DAYS) || 7;
+      let trialDays = fallbackTrialDays;
       try {
         const tc = await prisma.adminConfig.findFirst({ where: { key: 'trial_days' } });
-        if (tc?.value) devTrialDays = parseInt(tc.value) || devTrialDays;
+        trialDays = normalizeTrialDays(tc?.value, fallbackTrialDays);
       } catch { /* usa fallback */ }
-      const trialDays = devTrialDays;
       const trialEndsAt = new Date();
       trialEndsAt.setDate(trialEndsAt.getDate() + trialDays);
 

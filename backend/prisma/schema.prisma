@@ -240,6 +240,7 @@ model Rental {
   store            Store    @relation(fields: [storeId], references: [id], onDelete: Cascade)
   productId        String   // ID do produto na Nuvemshop (espelha RentableProduct.productId)
   orderId          String   // ID do pedido na Nuvemshop
+  lineItemId       String   @default("0") // discrimina itens do mesmo produto num mesmo pedido (NS item.id, ou índice posicional como fallback)
   orderNumber      Int      // Número do pedido (exibível ao lojista — distinto do id)
   status           Int      @default(1) // 0=cancelado 1=agendado 2=enviado 3=devolvido
   quantity         Int      @default(1)
@@ -251,11 +252,16 @@ model Rental {
   createdAt        DateTime @default(now())
   updatedAt        DateTime @updatedAt
 
-  // Único por loja+pedido+produto — garante idempotência no webhook (NS pode reenviar)
-  @@unique([storeId, orderId, productId])
+  // Único por loja+pedido+produto+item — garante idempotência no webhook (NS pode
+  // reenviar) sem colapsar dois itens distintos do mesmo produto no mesmo pedido.
+  @@unique([storeId, orderId, productId, lineItemId])
   // Índice para a consulta de disponibilidade (overlap de reservas)
   @@index([storeId, productId, reservationStart, reservationEnd])
   @@index([storeId, status])
+  // Índices de apoio para os 3 critérios de filtro do board Kanban (GET /api/rentals)
+  @@index([storeId, orderCreatedAt])
+  @@index([storeId, reservationStart])
+  @@index([storeId, reservationEnd])
   @@map("rentals")
 }
 
