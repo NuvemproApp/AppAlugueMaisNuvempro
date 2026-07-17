@@ -1,6 +1,6 @@
 import React, { useState, useEffect } from 'react';
 import { useTranslation } from 'react-i18next';
-import { Box, Card, Button, Text, Title, Tag, Badge, Alert, Table, Spinner } from '@nimbus-ds/components';
+import { Box, Card, Button, Text, Title, Tag, Alert, Table, Spinner } from '@nimbus-ds/components';
 import { useNexo } from '../providers/NexoProvider.jsx';
 import api from '../services/api.js';
 
@@ -19,7 +19,7 @@ function StatusBadge({ status, t }) {
     trialing: { appearance: 'primary', label: t('billing.status.trialing') },
   };
   const cfg = map[status] || map.active;
-  return <Badge appearance={cfg.appearance}>{cfg.label}</Badge>;
+  return <Tag appearance={cfg.appearance}>{cfg.label}</Tag>;
 }
 
 export default function BillingPage({ locked = false }) {
