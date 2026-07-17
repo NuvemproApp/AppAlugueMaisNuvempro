@@ -1,4 +1,4 @@
-/* aluguemais — storefront script v2.3.0
+/* aluguemais — storefront script v2.4.0
  * Compatível com TODOS os temas Nuvemshop: legados, atuais, componentizados e futuros.
  * Referências:
  *   Anchor Points  : https://docs.nuvemshop.com.br/help/pontos-de-anchoragem
@@ -223,6 +223,71 @@
       if (m2) return m2[1];
     }
     return null;
+  }
+
+  // ─── Extrai a data do evento (ISO) de um item do carrinho ─────────────────────
+  // Cobre tanto a exibição nativa da NS (properties[]) quanto o wrapper que
+  // injectCartDate() insere em temas legados — em ambos os casos o texto contém
+  // o rótulo ("Data do Evento"/"Fecha del Evento") seguido do valor ISO cru
+  // (o mesmo formato do <input type="date">, nunca formatado pelo tema).
+  function extractCartItemDate(container) {
+    var els = container.querySelectorAll('strong,dt,span,b,th,td,p,div');
+    for (var i = 0; i < els.length; i++) {
+      var txt = (els[i].textContent || '').trim();
+      if (!txt || txt.length > 80) continue;
+      for (var j = 0; j < CART_DATE_LABELS.length; j++) {
+        if (txt.indexOf(CART_DATE_LABELS[j]) === 0) {
+          var m = txt.match(/(\d{4}-\d{2}-\d{2})/);
+          if (m) return m[1];
+        }
+      }
+    }
+    return null;
+  }
+
+  // ─── Quantidade de um item do carrinho ────────────────────────────────────────
+  function extractCartItemQty(container) {
+    var qi = container.querySelector(CART_QTY_INPUT);
+    if (qi) {
+      var v = parseInt(qi.value, 10);
+      if (v > 0) return v;
+    }
+    return 1;
+  }
+
+  // ─── Unidades do produto `pid` já no carrinho cujo período reservado
+  //     [data - diasAntes, data + diasDepois] se sobrepõe à janela informada ───
+  // Fecha o furo em que o estoque só é debitado de fato no webhook order/created:
+  // enquanto o pedido não é finalizado, essas unidades já estão "comprometidas"
+  // no carrinho do próprio visitante mas o back-end ainda não tem como saber disso.
+  // Não cobre o caso de outro visitante concorrente com o mesmo produto/data —
+  // isso exigiria uma reserva de estoque no servidor, que a Nuvemshop não expõe
+  // via webhook de carrinho (só existe webhook de pedido já finalizado).
+  function cartQtyOverlapping(pid, selFrom, selTo, diasAntes, diasDepois) {
+    var total = 0;
+    var seen = makeWeakSet();
+    for (var si = 0; si < CART_ITEM_SEL_LIST.length; si++) {
+      var items = document.querySelectorAll(CART_ITEM_SEL_LIST[si]);
+      for (var ii = 0; ii < items.length; ii++) {
+        var item = items[ii];
+        if (seen.has(item)) continue;
+        seen.add(item);
+
+        var itemPid = getProductIdFromCart(item);
+        if (!itemPid || String(itemPid) !== String(pid)) continue;
+
+        var dateStr = extractCartItemDate(item);
+        var eventDate = dateStr ? fromISO(dateStr) : null;
+        if (!eventDate) continue;
+
+        var itemFrom = addDays(eventDate, -diasAntes);
+        var itemTo   = addDays(eventDate,  diasDepois);
+        if (itemFrom.getTime() > selTo.getTime() || itemTo.getTime() < selFrom.getTime()) continue;
+
+        total += extractCartItemQty(item);
+      }
+    }
+    return total;
   }
 
   // ─── sessionStorage: data do evento por produto ────────────────────────────────
@@ -544,10 +609,10 @@
       setBtn(buyBtn, 'checking', TXT.checking());
       msgEl.textContent = '';
 
-      var from = toISO(addDays(selected, -cfg.diasAntes));
-      var to   = toISO(addDays(selected,  cfg.diasDepois));
-      var url  = apiBase + '/storefront/' + sid + '/products/' + pid +
-                 '/availability?from=' + from + '&to=' + to + '&qty=' + qty;
+      var fromDate = addDays(selected, -cfg.diasAntes);
+      var toDate   = addDays(selected,  cfg.diasDepois);
+      var url = apiBase + '/storefront/' + sid + '/products/' + pid +
+                '/availability?from=' + toISO(fromDate) + '&to=' + toISO(toDate) + '&qty=' + qty;
 
       jsonFetch(url, function (err, data) {
         if (err || !data) {
@@ -556,8 +621,12 @@
           msgEl.textContent = TXT.errCheck();
           return;
         }
-        var remaining = data.remaining || 0;
-        if (data.available && remaining >= qty) {
+        // Desconta unidades do mesmo produto já no carrinho deste visitante cujo
+        // período reservado se sobrepõe ao selecionado — o back-end só sabe de
+        // pedidos já finalizados (webhook order/created), não do carrinho em aberto.
+        var alreadyInCart = cartQtyOverlapping(pid, fromDate, toDate, cfg.diasAntes, cfg.diasDepois);
+        var remaining = Math.max(0, (data.remaining || 0) - alreadyInCart);
+        if (remaining >= qty) {
           setBtn(buyBtn, 'enabled', TXT.rent());
           msgEl.style.color = '#27ae60';
           msgEl.textContent = TXT.okHint() + (remaining > 1 ? ' (' + remaining + ')' : '');
