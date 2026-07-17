@@ -52,6 +52,29 @@
     "errorStock": "El inventario debe ser al menos 1.",
     "confirmDelete": "\u00bfSeguro que deseas eliminar este producto rentable?"
   },
+  "rentals": {
+    "title": "Rentas",
+    "heading": "Control de Rentas",
+    "filterCriterio": "Criterio de fecha",
+    "criterioOrderCreated": "Fecha de creaci\u00f3n del pedido",
+    "criterioReservationStart": "Fecha de inicio de la renta",
+    "criterioReservationEnd": "Fecha de fin de la renta",
+    "filterFrom": "Desde",
+    "filterTo": "Hasta",
+    "filterApply": "Filtrar",
+    "columnCancelado": "Cancelado",
+    "columnAgendado": "Agendado",
+    "columnEnviado": "Enviado",
+    "columnDevolvido": "Devuelto",
+    "cardOrder": "Pedido: {{number}}",
+    "cardCreatedAt": "Fecha",
+    "cardStart": "Inicio de la renta",
+    "cardEnd": "Fin de la renta",
+    "emptyColumn": "Ninguna renta en esta columna.",
+    "statusUpdated": "Estado de la renta actualizado.",
+    "errorLoad": "Error al cargar rentas. Int\u00e9ntalo de nuevo.",
+    "errorStatusUpdate": "Error al actualizar el estado de la renta. Int\u00e9ntalo de nuevo."
+  },
   "terms": {
     "title": "T\u00e9rminos de Uso",
     "sections": {

@@ -10,6 +10,7 @@ import BillingPage from './pages/BillingPage.jsx';
 import Onboarding from './pages/Onboarding.jsx';
 import Dashboard from './pages/Dashboard.jsx';
 import ProductsPage from './pages/ProductsPage.jsx';
+import RentalsPage from './pages/RentalsPage.jsx';
 import { Box, Alert, Text, Button } from '@nimbus-ds/components';
 import { useNavigate } from 'react-router-dom';
 
@@ -80,6 +81,7 @@ export default function App() {
           <Route index element={<Dashboard />} />
           <Route path="billing" element={<BillingPage />} />
           <Route path="produtos" element={<ProductsPage />} />
+          <Route path="alugueis" element={<RentalsPage />} />
           <Route path="*" element={<Navigate to="/" replace />} />
         </Route>
       </Routes>

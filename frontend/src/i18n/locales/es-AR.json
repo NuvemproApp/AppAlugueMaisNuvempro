@@ -52,6 +52,29 @@
     "errorStock": "El stock debe ser al menos 1.",
     "confirmDelete": "\u00bfSeguro que quer\u00e9s eliminar este producto alquilable?"
   },
+  "rentals": {
+    "title": "Alquileres",
+    "heading": "Control de Alquileres",
+    "filterCriterio": "Criterio de fecha",
+    "criterioOrderCreated": "Fecha de creaci\u00f3n del pedido",
+    "criterioReservationStart": "Fecha de inicio de la locaci\u00f3n",
+    "criterioReservationEnd": "Fecha de fin de la locaci\u00f3n",
+    "filterFrom": "Desde",
+    "filterTo": "Hasta",
+    "filterApply": "Filtrar",
+    "columnCancelado": "Cancelado",
+    "columnAgendado": "Agendado",
+    "columnEnviado": "Enviado",
+    "columnDevolvido": "Devuelto",
+    "cardOrder": "Pedido: {{number}}",
+    "cardCreatedAt": "Fecha",
+    "cardStart": "Inicio de la locaci\u00f3n",
+    "cardEnd": "Fin de la locaci\u00f3n",
+    "emptyColumn": "Ning\u00fan alquiler en esta columna.",
+    "statusUpdated": "Estado del alquiler actualizado.",
+    "errorLoad": "Error al cargar alquileres. Intent\u00e1 de nuevo.",
+    "errorStatusUpdate": "Error al actualizar el estado del alquiler. Intent\u00e1 de nuevo."
+  },
   "terms": {
     "title": "T\u00e9rminos de Uso",
     "sections": {

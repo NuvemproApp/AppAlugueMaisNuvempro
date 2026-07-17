@@ -2,6 +2,7 @@ const express = require('express');
 const crypto = require('crypto');
 const axios = require('axios');
 const prisma = require('../lib/prisma');
+const { removeAllWebhooks } = require('../config/nuvemshop');
 
 const router = express.Router();
 
@@ -35,13 +36,26 @@ function checkHmac(req) {
  */
 
 // Marca a data de desinstalação na loja. Idempotente: não sobrescreve data anterior.
+// Também tenta (best-effort) remover as assinaturas de webhook da loja na Nuvemshop —
+// se o token já tiver sido revogado nesse momento, falha silenciosamente.
 async function markUninstalled(storeId) {
   if (!storeId) return;
   try {
-    await prisma.store.updateMany({
+    const store = await prisma.store.findFirst({
       where: { nuvemshopId: String(storeId), uninstalledAt: null },
+    });
+    if (!store) return;
+
+    await prisma.store.update({
+      where: { id: store.id },
       data: { uninstalledAt: new Date() },
     });
+
+    try {
+      await removeAllWebhooks(store);
+    } catch (err) {
+      console.error('[nuvemshop-webhook] removeAllWebhooks falhou (best-effort):', err.message);
+    }
   } catch (err) {
     console.error('[nuvemshop-webhook] markUninstalled falhou:', err.message);
   }
@@ -246,6 +260,50 @@ router.post('/orders/created', async (req, res) => {
     await processOrderCreated(storeId, orderId);
   } catch (err) {
     console.error(`[order/created] erro store=${storeId} order=${orderId}:`, err.message);
+  }
+
+  res.status(200).json({ success: true });
+});
+
+/**
+ * POST /webhooks/orders/cancelled — pedido cancelado na Nuvemshop.
+ * Cancela automaticamente os aluguéis desse pedido que ainda estejam
+ * agendados (1) ou enviados (2) — nunca mexe em aluguéis já devolvidos (3),
+ * que já concluíram seu ciclo antes do cancelamento chegar.
+ * Sempre responde 200: a NS não deve retentar por falhas internas.
+ */
+router.post('/orders/cancelled', async (req, res) => {
+  const hmac = checkHmac(req);
+  if (hmac === false) {
+    console.warn('[nuvemshop] orders/cancelled com HMAC inválido — ignorado');
+    return res.status(401).json({ error: 'Invalid HMAC.' });
+  }
+
+  const storeNsId = req.body?.store_id;
+  const orderId = req.body?.id;
+
+  if (!storeNsId || !orderId) {
+    console.warn('[nuvemshop] orders/cancelled payload inválido:', req.body);
+    return res.status(200).json({ success: true });
+  }
+
+  console.log(`[nuvemshop] orders/cancelled store_id=${storeNsId} order_id=${orderId}`);
+
+  try {
+    const store = await prisma.store.findUnique({
+      where: { nuvemshopId: String(storeNsId) },
+      select: { id: true },
+    });
+
+    if (store) {
+      const { count } = await prisma.rental.updateMany({
+        where: { storeId: store.id, orderId: String(orderId), status: { in: [1, 2] } },
+        data: { status: 0 }, // 0 = cancelado
+      });
+      console.log(`[order/cancelled] ${count} aluguel(éis) cancelado(s) store=${store.id} order=${orderId}`);
+    }
+  } catch (err) {
+    console.error(`[order/cancelled] erro store_ns=${storeNsId} order=${orderId}:`, err.message);
   }
 
   res.status(200).json({ success: true });
