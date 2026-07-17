@@ -73,7 +73,17 @@
     "emptyColumn": "Ninguna renta en esta columna.",
     "statusUpdated": "Estado de la renta actualizado.",
     "errorLoad": "Error al cargar rentas. Int\u00e9ntalo de nuevo.",
-    "errorStatusUpdate": "Error al actualizar el estado de la renta. Int\u00e9ntalo de nuevo."
+    "errorStatusUpdate": "Error al actualizar el estado de la renta. Int\u00e9ntalo de nuevo.",
+    "fluxoBtn": "Flujo",
+    "searchPlaceholder": "Buscar producto",
+    "colProduct": "Producto",
+    "colStatus": "Estado",
+    "colQuantity": "Cant. de Art\u00edculos",
+    "colEventDate": "Fecha del Evento",
+    "colPeriod": "Periodo Rentado",
+    "periodStart": "Inicio",
+    "periodEnd": "Fin",
+    "listEmpty": "Ninguna renta encontrada."
   },
   "terms": {
     "title": "T\u00e9rminos de Uso",

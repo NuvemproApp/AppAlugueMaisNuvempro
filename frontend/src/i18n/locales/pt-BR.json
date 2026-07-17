@@ -73,7 +73,17 @@
     "emptyColumn": "Nenhum aluguel nesta coluna.",
     "statusUpdated": "Status do aluguel atualizado.",
     "errorLoad": "Erro ao carregar alugu\u00e9is. Tente novamente.",
-    "errorStatusUpdate": "Erro ao atualizar o status do aluguel. Tente novamente."
+    "errorStatusUpdate": "Erro ao atualizar o status do aluguel. Tente novamente.",
+    "fluxoBtn": "Fluxo",
+    "searchPlaceholder": "Pesquisar produto",
+    "colProduct": "Produto",
+    "colStatus": "Status",
+    "colQuantity": "Qtde. de Itens",
+    "colEventDate": "Data do Evento",
+    "colPeriod": "Per\u00edodo Alugado",
+    "periodStart": "In\u00edcio",
+    "periodEnd": "Fim",
+    "listEmpty": "Nenhum aluguel encontrado."
   },
   "terms": {
     "title": "Termos de Uso",

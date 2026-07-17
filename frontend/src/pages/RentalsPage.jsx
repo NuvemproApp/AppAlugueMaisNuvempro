@@ -18,7 +18,6 @@ import {
   useSortable,
 } from '@dnd-kit/sortable';
 import { CSS } from '@dnd-kit/utilities';
-import { format } from 'date-fns';
 import {
   Box,
   Text,
@@ -32,44 +31,18 @@ import {
   Card,
 } from '@nimbus-ds/components';
 import api from '../services/api.js';
-
-const COLUMNS = [
-  { status: 0, labelKey: 'rentals.columnCancelado', appearance: 'danger' },
-  { status: 1, labelKey: 'rentals.columnAgendado', appearance: 'warning' },
-  { status: 2, labelKey: 'rentals.columnEnviado', appearance: 'success' },
-  { status: 3, labelKey: 'rentals.columnDevolvido', appearance: 'neutral' },
-];
+import { RENTAL_STATUS_META as COLUMNS } from '../lib/rentalStatus.js';
+import { toInputDate, formatDisplayDate } from '../lib/dateDisplay.js';
 
 const itemId = (rentalId) => `rental-${rentalId}`;
 const columnId = (status) => `col-${status}`;
 const parseItemId = (id) => Number(String(id).replace('rental-', ''));
 const parseColumnId = (id) => Number(String(id).replace('col-', ''));
 
-function toInputDate(date) {
-  return format(date, 'yyyy-MM-dd');
-}
-
 function todayRangeDefault() {
   const dataFinal = new Date();
   const dataInicial = new Date(dataFinal.getTime() - 7 * 86400000);
   return { dataInicial: toInputDate(dataInicial), dataFinal: toInputDate(dataFinal) };
-}
-
-// As datas de aluguel são armazenadas como "dia calendário" em UTC (sem hora real
-// associada) — usar o dia/mês/ano LOCAL do navegador aqui deslocaria a data em ±1
-// dia pra quem estiver num fuso diferente de UTC. Lemos os componentes UTC direto.
-function formatDisplayDate(value) {
-  if (!value) return '—';
-  try {
-    const date = new Date(value);
-    if (isNaN(date.getTime())) return '—';
-    const day = String(date.getUTCDate()).padStart(2, '0');
-    const month = String(date.getUTCMonth() + 1).padStart(2, '0');
-    const year = date.getUTCFullYear();
-    return `${day}/${month}/${year}`;
-  } catch {
-    return '—';
-  }
 }
 
 // ─── Conteúdo visual de um card de aluguel (Nimbus puro) ─────────────────────
@@ -259,7 +232,11 @@ export default function RentalsPage() {
           {t('products.title')}
         </Text>
         <Text as="span" color="neutral-textDisabled"> / </Text>
-        <Text as="span" color="neutral-textLow">{t('rentals.title')}</Text>
+        <Text as="span" color="primary-interactive" cursor="pointer" onClick={() => navigate('/alugueis')}>
+          {t('rentals.title')}
+        </Text>
+        <Text as="span" color="neutral-textDisabled"> / </Text>
+        <Text as="span" color="neutral-textLow">{t('rentals.fluxoBtn')}</Text>
       </Box>
 
       {/* Cabeçalho */}

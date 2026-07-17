@@ -73,7 +73,17 @@
     "emptyColumn": "Ning\u00fan alquiler en esta columna.",
     "statusUpdated": "Estado del alquiler actualizado.",
     "errorLoad": "Error al cargar alquileres. Intent\u00e1 de nuevo.",
-    "errorStatusUpdate": "Error al actualizar el estado del alquiler. Intent\u00e1 de nuevo."
+    "errorStatusUpdate": "Error al actualizar el estado del alquiler. Intent\u00e1 de nuevo.",
+    "fluxoBtn": "Flujo",
+    "searchPlaceholder": "Buscar producto",
+    "colProduct": "Producto",
+    "colStatus": "Estado",
+    "colQuantity": "Cant. de \u00cdtems",
+    "colEventDate": "Fecha del Evento",
+    "colPeriod": "Per\u00edodo Alquilado",
+    "periodStart": "Inicio",
+    "periodEnd": "Fin",
+    "listEmpty": "Ning\u00fan alquiler encontrado."
   },
   "terms": {
     "title": "T\u00e9rminos de Uso",

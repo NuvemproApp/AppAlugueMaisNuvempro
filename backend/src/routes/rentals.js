@@ -54,16 +54,20 @@ router.get('/', async (req, res, next) => {
       }),
       prisma.rentableProduct.findMany({
         where: { storeId: req.store.id },
-        select: { productId: true, nuvemshopName: true },
+        select: { productId: true, nuvemshopName: true, nuvemshopImage: true },
       }),
     ]);
 
-    const nameMap = new Map(rentableProducts.map((p) => [p.productId, p.nuvemshopName]));
+    const productMap = new Map(rentableProducts.map((p) => [p.productId, p]));
 
-    const enriched = rentals.map((r) => ({
-      ...r,
-      productName: nameMap.get(r.productId) || r.productId,
-    }));
+    const enriched = rentals.map((r) => {
+      const product = productMap.get(r.productId);
+      return {
+        ...r,
+        productName: product?.nuvemshopName || r.productId,
+        productImage: product?.nuvemshopImage || null,
+      };
+    });
 
     res.json({ rentals: enriched, criterio, dataInicial, dataFinal });
   } catch (err) {
