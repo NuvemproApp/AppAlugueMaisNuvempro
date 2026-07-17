@@ -68,14 +68,22 @@ function validateProductFields({ status, diasAntes, diasDepois, estoque }) {
   return errors;
 }
 
+const PRODUCTS_MAX_PAGE_SIZE = 100;
+const PRODUCTS_DEFAULT_PAGE_SIZE = 20;
+
+// Colunas ordenáveis — nuvemshopName/status/estoque/createdAt são colunas reais
+// de RentableProduct; qtdeAlugada é um agregado calculado (soma de aluguéis
+// ativos), sem coluna própria. A quantidade de produtos alugáveis por loja é
+// pequena e limitada (não cresce por pedido, ao contrário dos aluguéis) — dá
+// pra buscar tudo e ordenar/paginar em memória com segurança, sem precisar de
+// SQL bruto pra ordenar por um valor calculado.
+const PRODUCT_SORTABLE_FIELDS = ['nuvemshopName', 'status', 'estoque', 'qtdeAlugada', 'createdAt'];
+
 // ─── GET /api/products ── lista produtos alugáveis (sem chamada externa) ─────
 router.get('/', async (req, res, next) => {
   try {
     const [products, rentalAggs] = await Promise.all([
-      prisma.rentableProduct.findMany({
-        where: { storeId: req.store.id },
-        orderBy: { createdAt: 'desc' },
-      }),
+      prisma.rentableProduct.findMany({ where: { storeId: req.store.id } }),
       prisma.rental.groupBy({
         by: ['productId'],
         where: { storeId: req.store.id, status: { in: ACTIVE_STATUSES } },
@@ -84,13 +92,39 @@ router.get('/', async (req, res, next) => {
     ]);
 
     const rentalMap = new Map(rentalAggs.map((r) => [r.productId, r._sum.quantity || 0]));
+    let all = products.map((p) => ({ ...p, qtdeAlugada: rentalMap.get(p.productId) || 0 }));
 
-    const productsWithRented = products.map((p) => ({
-      ...p,
-      qtdeAlugada: rentalMap.get(p.productId) || 0,
-    }));
+    const search = String(req.query.search || '').trim().toLowerCase();
+    if (search) {
+      all = all.filter((p) => (p.nuvemshopName || p.productId || '').toLowerCase().includes(search));
+    }
 
-    res.json({ products: productsWithRented });
+    const sortBy = PRODUCT_SORTABLE_FIELDS.includes(req.query.sortBy) ? req.query.sortBy : 'createdAt';
+    const sortMul = req.query.sortDir === 'desc' ? -1 : 1;
+    all.sort((a, b) => {
+      const av = a[sortBy];
+      const bv = b[sortBy];
+      if (av instanceof Date || bv instanceof Date) {
+        return sortMul * (new Date(av).getTime() - new Date(bv).getTime());
+      }
+      if (typeof av === 'string' || typeof bv === 'string') {
+        return sortMul * String(av || '').localeCompare(String(bv || ''));
+      }
+      return sortMul * ((av || 0) - (bv || 0));
+    });
+
+    const total = all.length;
+    const page = Math.max(1, parseInt(req.query.page, 10) || 1);
+    const pageSize = Math.min(PRODUCTS_MAX_PAGE_SIZE, Math.max(1, parseInt(req.query.pageSize, 10) || PRODUCTS_DEFAULT_PAGE_SIZE));
+    const pageItems = all.slice((page - 1) * pageSize, page * pageSize);
+
+    res.json({
+      products: pageItems,
+      total,
+      page,
+      pageSize,
+      pageCount: Math.max(1, Math.ceil(total / pageSize)),
+    });
   } catch (err) {
     next(err);
   }

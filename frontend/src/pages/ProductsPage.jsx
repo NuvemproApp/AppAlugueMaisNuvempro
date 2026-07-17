@@ -1,4 +1,4 @@
-import React, { useState, useEffect, useRef, useCallback, useMemo } from 'react';
+import React, { useState, useEffect, useRef, useCallback } from 'react';
 import { useNavigate } from 'react-router-dom';
 import { useTranslation } from 'react-i18next';
 import {
@@ -15,8 +15,25 @@ import {
   Spinner,
   Alert,
   Thumbnail,
+  Pagination,
 } from '@nimbus-ds/components';
 import api from '../services/api.js';
+
+const PAGE_SIZE = 20;
+
+function SortableHeader({ label, field, sortBy, sortDir, onSort }) {
+  const active = sortBy === field;
+  return (
+    <Text
+      as="span"
+      cursor="pointer"
+      fontWeight="bold"
+      onClick={() => onSort(field)}
+    >
+      {label} {active ? (sortDir === 'asc' ? '▲' : '▼') : ''}
+    </Text>
+  );
+}
 
 // ─── Dropdown de ações ────────────────────────────────────────────────────────
 function ActionsMenu({ onEdit, onDelete, labelEdit, labelDelete }) {
@@ -89,9 +106,15 @@ export default function ProductsPage() {
   const navigate = useNavigate();
 
   const [products, setProducts] = useState([]);
+  const [total, setTotal] = useState(0);
+  const [pageCount, setPageCount] = useState(1);
+  const [page, setPage] = useState(1);
   const [loading, setLoading] = useState(true);
   const [error, setError] = useState('');
-  const [search, setSearch] = useState('');
+  const [searchInput, setSearchInput] = useState(''); // valor digitado (imediato)
+  const [search, setSearch] = useState(''); // valor efetivamente buscado (debounced)
+  const [sortBy, setSortBy] = useState('createdAt');
+  const [sortDir, setSortDir] = useState('desc');
 
   const [modalOpen, setModalOpen] = useState(false);
   const [editing, setEditing] = useState(null); // null = criando, objeto = editando
@@ -103,13 +126,27 @@ export default function ProductsPage() {
   const [nsProducts, setNsProducts] = useState([]); // produtos NS disponíveis para o select
   const [nsLoading, setNsLoading] = useState(false);
 
+  // Busca é feita no servidor — com paginação real, filtrar só o que já está
+  // carregado na tela deixaria de encontrar produtos nas outras páginas.
+  useEffect(() => {
+    const timer = setTimeout(() => {
+      setSearch(searchInput.trim());
+      setPage(1);
+    }, 350);
+    return () => clearTimeout(timer);
+  }, [searchInput]);
+
   // ─── Carrega lista de produtos alugáveis ──────────────────────────────────
-  const loadProducts = useCallback(async () => {
+  const loadProducts = useCallback(async (pageArg, searchArg, sortByArg, sortDirArg) => {
     setLoading(true);
     setError('');
     try {
-      const { data } = await api.get('/api/products');
+      const { data } = await api.get('/api/products', {
+        params: { page: pageArg, pageSize: PAGE_SIZE, search: searchArg || undefined, sortBy: sortByArg, sortDir: sortDirArg },
+      });
       setProducts(data.products || []);
+      setTotal(data.total || 0);
+      setPageCount(data.pageCount || 1);
     } catch {
       setError(t('products.errorLoad'));
     } finally {
@@ -117,7 +154,18 @@ export default function ProductsPage() {
     }
   }, [t]);
 
-  useEffect(() => { loadProducts(); }, [loadProducts]);
+  useEffect(() => {
+    loadProducts(page, search, sortBy, sortDir);
+  }, [loadProducts, page, search, sortBy, sortDir]);
+
+  function handleSort(field) {
+    if (sortBy === field) {
+      setSortDir((d) => (d === 'asc' ? 'desc' : 'asc'));
+    } else {
+      setSortBy(field);
+      setSortDir('asc');
+    }
+  }
 
   // ─── Abre modal de criação ────────────────────────────────────────────────
   async function openCreate() {
@@ -218,7 +266,7 @@ export default function ProductsPage() {
         await api.post('/api/products', form);
       }
       closeModal();
-      await loadProducts();
+      await loadProducts(page, search, sortBy, sortDir);
     } catch (err) {
       const msg = err?.response?.data?.error || t('products.errorSave');
       setValidationErrors([msg]);
@@ -232,7 +280,7 @@ export default function ProductsPage() {
     if (!window.confirm(t('products.confirmDelete'))) return;
     try {
       await api.delete(`/api/products/${id}`);
-      await loadProducts();
+      await loadProducts(page, search, sortBy, sortDir);
     } catch {
       alert(t('products.errorDelete'));
     }
@@ -242,13 +290,6 @@ export default function ProductsPage() {
   function getProductName(p) {
     return p.nuvemshopName || p.productId;
   }
-
-  // ─── Filtro de busca (client-side) ────────────────────────────────────────
-  const visibleProducts = useMemo(() => {
-    const term = search.trim().toLowerCase();
-    if (!term) return products;
-    return products.filter((p) => getProductName(p).toLowerCase().includes(term));
-  }, [products, search]);
 
   // ─── Render ───────────────────────────────────────────────────────────────
   return (
@@ -273,12 +314,12 @@ export default function ProductsPage() {
       </Box>
 
       {/* Busca */}
-      {!loading && products.length > 0 && (
+      {!loading && (total > 0 || search) && (
         <Box style={{ maxWidth: 360 }}>
           <Input
             placeholder={t('products.searchPlaceholder')}
-            value={search}
-            onChange={(e) => setSearch(e.target.value)}
+            value={searchInput}
+            onChange={(e) => setSearchInput(e.target.value)}
           />
         </Box>
       )}
@@ -295,7 +336,7 @@ export default function ProductsPage() {
         <Box display="flex" justifyContent="center" padding="8">
           <Spinner size="large" />
         </Box>
-      ) : products.length === 0 ? (
+      ) : total === 0 && !search ? (
         <Box
           padding="8"
           display="flex"
@@ -312,7 +353,7 @@ export default function ProductsPage() {
             {t('products.addProduct')}
           </Button>
         </Box>
-      ) : visibleProducts.length === 0 ? (
+      ) : products.length === 0 ? (
         <Box
           padding="8"
           display="flex"
@@ -330,15 +371,23 @@ export default function ProductsPage() {
           <Table>
             <Table.Head>
               <Table.Row>
-                <Table.Cell as="th">{t('products.colProduct')}</Table.Cell>
-                <Table.Cell as="th">{t('products.colQtyRented')}</Table.Cell>
-                <Table.Cell as="th">{t('products.colStatus')}</Table.Cell>
-                <Table.Cell as="th">{t('products.colStock')}</Table.Cell>
+                <Table.Cell as="th">
+                  <SortableHeader label={t('products.colProduct')} field="nuvemshopName" sortBy={sortBy} sortDir={sortDir} onSort={handleSort} />
+                </Table.Cell>
+                <Table.Cell as="th">
+                  <SortableHeader label={t('products.colQtyRented')} field="qtdeAlugada" sortBy={sortBy} sortDir={sortDir} onSort={handleSort} />
+                </Table.Cell>
+                <Table.Cell as="th">
+                  <SortableHeader label={t('products.colStatus')} field="status" sortBy={sortBy} sortDir={sortDir} onSort={handleSort} />
+                </Table.Cell>
+                <Table.Cell as="th">
+                  <SortableHeader label={t('products.colStock')} field="estoque" sortBy={sortBy} sortDir={sortDir} onSort={handleSort} />
+                </Table.Cell>
                 <Table.Cell as="th">{t('products.colActions')}</Table.Cell>
               </Table.Row>
             </Table.Head>
             <Table.Body>
-              {visibleProducts.map((p) => (
+              {products.map((p) => (
                 <Table.Row key={p.id}>
                   {/* Produto */}
                   <Table.Cell>
@@ -406,6 +455,12 @@ export default function ProductsPage() {
               ))}
             </Table.Body>
           </Table>
+        </Box>
+      )}
+
+      {!loading && pageCount > 1 && (
+        <Box display="flex" justifyContent="center">
+          <Pagination activePage={page} pageCount={pageCount} onPageChange={setPage} />
         </Box>
       )}
 

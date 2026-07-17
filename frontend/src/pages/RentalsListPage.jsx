@@ -39,7 +39,8 @@ export default function RentalsListPage() {
   const [dataInicial, setDataInicial] = useState('');
   const [dataFinal, setDataFinal] = useState('');
   const [appliedRange, setAppliedRange] = useState({ criterio: 1, dataInicial: '', dataFinal: '' });
-  const [sortDir, setSortDir] = useState('asc'); // ordenação primária (servidor), pelo critério aplicado
+  const [sortBy, setSortBy] = useState(null); // null = usa o campo do critério aplicado (comportamento original)
+  const [sortDir, setSortDir] = useState('asc');
 
   // Busca é feita no servidor — sem isso, com paginação real, ela só encontraria
   // produtos dentro da página atualmente carregada.
@@ -51,7 +52,7 @@ export default function RentalsListPage() {
     return () => clearTimeout(timer);
   }, [searchInput]);
 
-  const load = useCallback(async (pageArg, searchArg, rangeArg, sortDirArg) => {
+  const load = useCallback(async (pageArg, searchArg, rangeArg, sortByArg, sortDirArg) => {
     setLoading(true);
     setError('');
     try {
@@ -60,6 +61,7 @@ export default function RentalsListPage() {
           criterio: rangeArg.criterio,
           dataInicial: rangeArg.dataInicial || undefined,
           dataFinal: rangeArg.dataFinal || undefined,
+          sortBy: sortByArg || undefined,
           sortDir: sortDirArg,
           page: pageArg,
           pageSize: PAGE_SIZE,
@@ -76,12 +78,25 @@ export default function RentalsListPage() {
   }, [t]);
 
   useEffect(() => {
-    load(page, search, appliedRange, sortDir);
-  }, [load, page, search, appliedRange, sortDir]);
+    load(page, search, appliedRange, sortBy, sortDir);
+  }, [load, page, search, appliedRange, sortBy, sortDir]);
 
   function handleFilter() {
     setAppliedRange({ criterio, dataInicial, dataFinal });
     setPage(1);
+  }
+
+  // Colunas ordenáveis no servidor (Status, Qtde. de Itens, Data do Evento) —
+  // "Produto" continua sendo o sort client-side já existente (só a página
+  // atual), porque não há relação formal no banco entre aluguel e produto
+  // pra ordenar por nome com paginação real sem SQL bruto.
+  function handleSortBy(field) {
+    if (sortBy === field) {
+      setSortDir((d) => (d === 'asc' ? 'desc' : 'asc'));
+    } else {
+      setSortBy(field);
+      setSortDir('asc');
+    }
   }
 
   // Ordena só a página atual por produto (sort global exigiria ordenação no
@@ -197,9 +212,21 @@ export default function RentalsListPage() {
                     {t('rentals.colProduct')} {sortAsc ? '▲' : '▼'}
                   </Text>
                 </Table.Cell>
-                <Table.Cell as="th">{t('rentals.colStatus')}</Table.Cell>
-                <Table.Cell as="th">{t('rentals.colQuantity')}</Table.Cell>
-                <Table.Cell as="th">{t('rentals.colEventDate')}</Table.Cell>
+                <Table.Cell as="th">
+                  <Text as="span" cursor="pointer" fontWeight="bold" onClick={() => handleSortBy('status')}>
+                    {t('rentals.colStatus')} {sortBy === 'status' ? (sortDir === 'asc' ? '▲' : '▼') : ''}
+                  </Text>
+                </Table.Cell>
+                <Table.Cell as="th">
+                  <Text as="span" cursor="pointer" fontWeight="bold" onClick={() => handleSortBy('quantity')}>
+                    {t('rentals.colQuantity')} {sortBy === 'quantity' ? (sortDir === 'asc' ? '▲' : '▼') : ''}
+                  </Text>
+                </Table.Cell>
+                <Table.Cell as="th">
+                  <Text as="span" cursor="pointer" fontWeight="bold" onClick={() => handleSortBy('eventDate')}>
+                    {t('rentals.colEventDate')} {sortBy === 'eventDate' ? (sortDir === 'asc' ? '▲' : '▼') : ''}
+                  </Text>
+                </Table.Cell>
                 <Table.Cell as="th">{t('rentals.colPeriod')}</Table.Cell>
               </Table.Row>
             </Table.Head>

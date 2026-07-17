@@ -16,6 +16,14 @@ const CRITERIO_FIELD = {
 const STATUS_VALUES = Object.values(RENTAL_STATUS);
 const MAX_RANGE_MS = 2 * 365 * 86400000; // 2 anos — teto de segurança pro board Kanban
 
+// Colunas ordenáveis no modo lista — todas colunas reais de Rental, sem join.
+// "Produto" fica de fora de propósito: não existe relação formal no schema
+// entre Rental e RentableProduct (productId é só uma string compartilhada),
+// então não dá pra ordenar por nome no banco sem SQL bruto ou uma FK que
+// bloquearia apagar um produto alugável com histórico de aluguéis — por ora
+// esse campo continua ordenável só client-side (a página atual).
+const RENTAL_SORTABLE_FIELDS = ['orderCreatedAt', 'reservationStart', 'reservationEnd', 'eventDate', 'status', 'quantity'];
+
 // ─── Helper: busca aluguel da própria loja ou lança 404 ──────────────────────
 async function findOwnedRental(id, storeId) {
   const rental = await prisma.rental.findFirst({
@@ -84,6 +92,11 @@ router.get('/', async (req, res, next) => {
         where[field] = range;
       }
 
+      // sortBy é independente do critério de filtro — dá pra filtrar por uma
+      // data e ordenar por outra coluna (ex: filtrar por data de criação do
+      // pedido, ordenar por quantidade). Sem sortBy, cai no mesmo campo do
+      // critério — comportamento idêntico ao de antes.
+      const sortBy = RENTAL_SORTABLE_FIELDS.includes(req.query.sortBy) ? req.query.sortBy : field;
       const sortDir = req.query.sortDir === 'desc' ? 'desc' : 'asc';
       const page = Math.max(1, parseInt(req.query.page, 10) || 1);
       const pageSize = Math.min(MAX_PAGE_SIZE, Math.max(1, parseInt(req.query.pageSize, 10) || DEFAULT_PAGE_SIZE));
@@ -92,7 +105,7 @@ router.get('/', async (req, res, next) => {
         prisma.rental.count({ where }),
         prisma.rental.findMany({
           where,
-          orderBy: { [field]: sortDir },
+          orderBy: { [sortBy]: sortDir },
           skip: (page - 1) * pageSize,
           take: pageSize,
         }),
@@ -105,6 +118,7 @@ router.get('/', async (req, res, next) => {
         pageSize,
         pageCount: Math.max(1, Math.ceil(total / pageSize)),
         criterio,
+        sortBy,
         sortDir,
       });
     }
