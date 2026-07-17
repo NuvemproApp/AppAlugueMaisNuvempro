@@ -1,4 +1,4 @@
-/* aluguemais — storefront script v2.4.0
+/* aluguemais — storefront script v2.4.1
  * Compatível com TODOS os temas Nuvemshop: legados, atuais, componentizados e futuros.
  * Referências:
  *   Anchor Points  : https://docs.nuvemshop.com.br/help/pontos-de-anchoragem
@@ -97,13 +97,17 @@
     var css =
       '.alm-cart-item .js-quantity-down,' +
       '.alm-cart-item .js-quantity-up,' +
+      '.alm-cart-item .js-cart-quantity-btn,' +
       '.alm-cart-item [data-quantity-action],' +
       '.alm-cart-item [data-action="decrease-quantity"],' +
       '.alm-cart-item [data-action="increase-quantity"],' +
       '.alm-cart-item [data-action="minus"],' +
-      '.alm-cart-item [data-action="plus"]' +
+      '.alm-cart-item [data-action="plus"],' +
+      '.alm-cart-item [data-component="quantity.minus"],' +
+      '.alm-cart-item [data-component="quantity.plus"]' +
       '{display:none!important}' +
       '.alm-cart-item .js-quantity-input,' +
+      '.alm-cart-item .js-cart-quantity-input,' +
       '.alm-cart-item input[name*="quantity"],' +
       '.alm-cart-item input[name*="updates"],' +
       '.alm-cart-item input[type="number"]' +
@@ -189,6 +193,7 @@
   // CARRINHO — controles de quantidade
   var CART_QTY_INPUT = [
     '.js-quantity-input',
+    '.js-cart-quantity-input',
     'input[name*="quantity"]',
     'input[name*="updates"]',
     'input[type="number"]',
@@ -197,11 +202,14 @@
   var CART_QTY_BTNS = [
     '.js-quantity-down',
     '.js-quantity-up',
+    '.js-cart-quantity-btn',              // tema padrão NS: mesma classe p/ + e -, diferenciados por data-component
     '[data-quantity-action]',
     '[data-action="decrease-quantity"]',
     '[data-action="increase-quantity"]',
     '[data-action="minus"]',
     '[data-action="plus"]',
+    '[data-component="quantity.minus"]',
+    '[data-component="quantity.plus"]',
   ].join(',');
 
   // Rótulos da data do evento (todos os idiomas suportados)
