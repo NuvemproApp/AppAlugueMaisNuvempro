@@ -10,7 +10,6 @@
     }
   },
   "nav": {
-    "dashboard": "Panel",
     "products": "Productos",
     "settings": "Configuraci\u00f3n",
     "billing": "Planes",
@@ -296,11 +295,6 @@
         "answer": "S\u00ed, utilizamos encriptaci\u00f3n y seguimos las mejores pr\u00e1cticas de seguridad para proteger tus datos."
       }
     ]
-  },
-  "dashboard": {
-    "title": "Panel",
-    "welcome": "\u00a1Bienvenido a tu panel!",
-    "contentPlaceholder": "Agrega aqu\u00ed el contenido de tu app."
   },
   "settings": {
     "title": "Configuraci\u00f3n",

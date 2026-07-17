@@ -8,7 +8,6 @@ import LoadingState from './components/LoadingState.jsx';
 import TermsPage from './pages/TermsPage.jsx';
 import BillingPage from './pages/BillingPage.jsx';
 import Onboarding from './pages/Onboarding.jsx';
-import Dashboard from './pages/Dashboard.jsx';
 import ProductsPage from './pages/ProductsPage.jsx';
 import RentalsListPage from './pages/RentalsListPage.jsx';
 import RentalsPage from './pages/RentalsPage.jsx';
@@ -79,7 +78,7 @@ export default function App() {
       {showTrialBanner && <TrialBanner daysLeft={trialDaysLeft} />}
       <Routes>
         <Route element={<Layout />}>
-          <Route index element={<Dashboard />} />
+          <Route index element={<ProductsPage />} />
           <Route path="billing" element={<BillingPage />} />
           <Route path="produtos" element={<ProductsPage />} />
           <Route path="alugueis" element={<RentalsListPage />} />

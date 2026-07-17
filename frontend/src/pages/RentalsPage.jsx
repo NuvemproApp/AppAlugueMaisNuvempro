@@ -224,10 +224,6 @@ export default function RentalsPage() {
 
       {/* Breadcrumb */}
       <Box display="flex" alignItems="center" gap="1">
-        <Text as="span" color="primary-interactive" cursor="pointer" onClick={() => navigate('/')}>
-          {t('nav.dashboard')}
-        </Text>
-        <Text as="span" color="neutral-textDisabled"> / </Text>
         <Text as="span" color="primary-interactive" cursor="pointer" onClick={() => navigate('/produtos')}>
           {t('products.title')}
         </Text>

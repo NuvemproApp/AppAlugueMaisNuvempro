@@ -208,12 +208,8 @@ export default function ProductsPage() {
   return (
     <Box display="flex" flexDirection="column" gap="4">
 
-      {/* Breadcrumb */}
+      {/* Breadcrumb — Produtos é a tela inicial do app, sem nível acima */}
       <Box display="flex" alignItems="center" gap="1">
-        <Text as="span" color="primary-interactive" cursor="pointer" onClick={() => navigate('/')}>
-          {t('nav.dashboard')}
-        </Text>
-        <Text as="span" color="neutral-textDisabled"> / </Text>
         <Text as="span" color="neutral-textLow">{t('products.title')}</Text>
       </Box>
 

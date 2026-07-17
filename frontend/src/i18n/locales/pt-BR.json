@@ -10,7 +10,6 @@
     }
   },
   "nav": {
-    "dashboard": "Painel",
     "products": "Produtos",
     "settings": "Configura\u00e7\u00f5es",
     "billing": "Planos",
@@ -300,11 +299,6 @@
         "answer": "Sim, utilizamos criptografia e seguimos as melhores pr\u00e1ticas de seguran\u00e7a para proteger seus dados."
       }
     ]
-  },
-  "dashboard": {
-    "title": "Painel",
-    "welcome": "Bem-vindo ao seu painel!",
-    "contentPlaceholder": "Adicione aqui o conteúdo do seu app."
   },
   "settings": {
     "title": "Configura\u00e7\u00f5es",

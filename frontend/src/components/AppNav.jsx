@@ -202,13 +202,7 @@ export default function AppNav() {
         <Box display="flex" gap="2" alignItems="center">
           <BrandSymbol height={26} />
           <Button
-            appearance={isActive('/') ? 'primary' : 'neutral'}
-            onClick={() => navigate('/')}
-          >
-            {t('nav.dashboard')}
-          </Button>
-          <Button
-            appearance={isActive('/produtos') ? 'primary' : 'neutral'}
+            appearance={isActive('/') || isActive('/produtos') ? 'primary' : 'neutral'}
             onClick={() => navigate('/produtos')}
           >
             {t('nav.products')}
