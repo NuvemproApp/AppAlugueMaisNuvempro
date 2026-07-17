@@ -6,7 +6,7 @@ import {
   Text,
   Title,
   Button,
-  Badge,
+  Tag,
   Input,
   Table,
   Spinner,
@@ -163,9 +163,9 @@ export default function RentalsListPage() {
                       </Box>
                     </Table.Cell>
                     <Table.Cell>
-                      <Badge appearance={statusMeta?.appearance || 'neutral'}>
+                      <Tag appearance={statusMeta?.appearance || 'neutral'}>
                         {statusMeta ? t(statusMeta.labelKey) : r.status}
-                      </Badge>
+                      </Tag>
                     </Table.Cell>
                     <Table.Cell>
                       <Text>{r.quantity}</Text>

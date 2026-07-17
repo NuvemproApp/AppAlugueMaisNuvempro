@@ -1,4 +1,4 @@
-import React, { useState, useEffect, useRef, useCallback } from 'react';
+import React, { useState, useEffect, useRef, useCallback, useMemo } from 'react';
 import { useNavigate } from 'react-router-dom';
 import { useTranslation } from 'react-i18next';
 import {
@@ -6,7 +6,7 @@ import {
   Text,
   Title,
   Button,
-  Badge,
+  Tag,
   Modal,
   Table,
   Select,
@@ -91,12 +91,14 @@ export default function ProductsPage() {
   const [products, setProducts] = useState([]);
   const [loading, setLoading] = useState(true);
   const [error, setError] = useState('');
+  const [search, setSearch] = useState('');
 
   const [modalOpen, setModalOpen] = useState(false);
   const [editing, setEditing] = useState(null); // null = criando, objeto = editando
   const [form, setForm] = useState(EMPTY_FORM);
   const [saving, setSaving] = useState(false);
-  const [formError, setFormError] = useState('');
+  const [invalidFields, setInvalidFields] = useState(new Set());
+  const [validationErrors, setValidationErrors] = useState([]);
 
   const [nsProducts, setNsProducts] = useState([]); // produtos NS disponíveis para o select
   const [nsLoading, setNsLoading] = useState(false);
@@ -121,7 +123,8 @@ export default function ProductsPage() {
   async function openCreate() {
     setEditing(null);
     setForm(EMPTY_FORM);
-    setFormError('');
+    setInvalidFields(new Set());
+    setValidationErrors([]);
     setModalOpen(true);
     setNsLoading(true);
     try {
@@ -144,29 +147,65 @@ export default function ProductsPage() {
       diasDepois: product.diasDepois,
       estoque: product.estoque,
     });
-    setFormError('');
+    setInvalidFields(new Set());
+    setValidationErrors([]);
     setModalOpen(true);
   }
 
   function closeModal() {
     setModalOpen(false);
     setEditing(null);
-    setFormError('');
+    setInvalidFields(new Set());
+    setValidationErrors([]);
+  }
+
+  // ─── Limpa o estado de inválido de um campo ao ser editado ────────────────
+  function clearInvalid(field) {
+    setInvalidFields((s) => {
+      if (!s.has(field)) return s;
+      const next = new Set(s);
+      next.delete(field);
+      return next;
+    });
+  }
+
+  // ─── Valida os campos do formulário (inteiros, obrigatórios) ──────────────
+  function validate() {
+    const invalid = new Set();
+    const errors = [];
+
+    if (!editing && !form.productId) {
+      invalid.add('productId');
+      errors.push(t('products.errorNoProduct'));
+    }
+    if (!Number.isInteger(form.estoque) || form.estoque < 1) {
+      invalid.add('estoque');
+      errors.push(t('products.errorStock'));
+    }
+    if (!Number.isInteger(form.diasAntes) || form.diasAntes < 0) {
+      invalid.add('diasAntes');
+      errors.push(t('products.errorDaysBefore'));
+    }
+    if (!Number.isInteger(form.diasDepois) || form.diasDepois < 0) {
+      invalid.add('diasDepois');
+      errors.push(t('products.errorDaysAfter'));
+    }
+
+    return { invalid, errors };
   }
 
   // ─── Salva (criar ou atualizar) ───────────────────────────────────────────
   async function handleSave() {
-    if (!editing && !form.productId) {
-      setFormError(t('products.errorNoProduct'));
-      return;
-    }
-    if (form.estoque < 1) {
-      setFormError(t('products.errorStock'));
+    const { invalid, errors } = validate();
+    if (errors.length > 0) {
+      setInvalidFields(invalid);
+      setValidationErrors(errors);
       return;
     }
 
     setSaving(true);
-    setFormError('');
+    setInvalidFields(new Set());
+    setValidationErrors([]);
     try {
       if (editing) {
         await api.patch(`/api/products/${editing.id}`, {
@@ -182,7 +221,7 @@ export default function ProductsPage() {
       await loadProducts();
     } catch (err) {
       const msg = err?.response?.data?.error || t('products.errorSave');
-      setFormError(msg);
+      setValidationErrors([msg]);
     } finally {
       setSaving(false);
     }
@@ -203,6 +242,13 @@ export default function ProductsPage() {
   function getProductName(p) {
     return p.nuvemshopName || p.productId;
   }
+
+  // ─── Filtro de busca (client-side) ────────────────────────────────────────
+  const visibleProducts = useMemo(() => {
+    const term = search.trim().toLowerCase();
+    if (!term) return products;
+    return products.filter((p) => getProductName(p).toLowerCase().includes(term));
+  }, [products, search]);
 
   // ─── Render ───────────────────────────────────────────────────────────────
   return (
@@ -225,6 +271,17 @@ export default function ProductsPage() {
           </Button>
         </Box>
       </Box>
+
+      {/* Busca */}
+      {!loading && products.length > 0 && (
+        <Box style={{ maxWidth: 360 }}>
+          <Input
+            placeholder={t('products.searchPlaceholder')}
+            value={search}
+            onChange={(e) => setSearch(e.target.value)}
+          />
+        </Box>
+      )}
 
       {/* Estado de erro global */}
       {error && (
@@ -255,6 +312,18 @@ export default function ProductsPage() {
             {t('products.addProduct')}
           </Button>
         </Box>
+      ) : visibleProducts.length === 0 ? (
+        <Box
+          padding="8"
+          display="flex"
+          justifyContent="center"
+          borderColor="neutral-surfaceHighlight"
+          borderStyle="dashed"
+          borderWidth="1"
+          borderRadius="2"
+        >
+          <Text color="neutral-textLow">{t('products.searchEmpty')}</Text>
+        </Box>
       ) : (
         /* Tabela */
         <Box style={{ overflowX: 'auto' }}>
@@ -269,7 +338,7 @@ export default function ProductsPage() {
               </Table.Row>
             </Table.Head>
             <Table.Body>
-              {products.map((p) => (
+              {visibleProducts.map((p) => (
                 <Table.Row key={p.id}>
                   {/* Produto */}
                   <Table.Cell>
@@ -314,11 +383,9 @@ export default function ProductsPage() {
 
                   {/* Situação */}
                   <Table.Cell>
-                    <Badge
-                      appearance={p.status === 1 ? 'success' : 'neutral'}
-                    >
+                    <Tag appearance={p.status === 1 ? 'success' : 'danger'}>
                       {p.status === 1 ? t('products.statusActive') : t('products.statusInactive')}
-                    </Badge>
+                    </Tag>
                   </Table.Cell>
 
                   {/* Estoque */}
@@ -350,9 +417,15 @@ export default function ProductsPage() {
         <Modal.Body padding="base">
           <Box display="flex" flexDirection="column" gap="4">
 
-            {formError && (
-              <Alert appearance="danger">
-                <Text>{formError}</Text>
+            {validationErrors.length > 0 && (
+              <Alert appearance="danger" title={t('common.error')}>
+                <Box as="ul" style={{ margin: '4px 0 0', paddingLeft: 18 }}>
+                  {validationErrors.map((msg, i) => (
+                    <li key={i}>
+                      <Text fontSize="caption">{msg}</Text>
+                    </li>
+                  ))}
+                </Box>
               </Alert>
             )}
 
@@ -373,7 +446,11 @@ export default function ProductsPage() {
                   <Select
                     id="productId"
                     value={form.productId}
-                    onChange={(e) => setForm((f) => ({ ...f, productId: e.target.value }))}
+                    appearance={invalidFields.has('productId') ? 'danger' : undefined}
+                    onChange={(e) => {
+                      setForm((f) => ({ ...f, productId: e.target.value }));
+                      clearInvalid('productId');
+                    }}
                   >
                     <option value="">{t('products.selectProduct')}</option>
                     {nsProducts.map((p) => (
@@ -398,8 +475,13 @@ export default function ProductsPage() {
                 id="estoque"
                 type="number"
                 min="1"
+                step="1"
+                appearance={invalidFields.has('estoque') ? 'danger' : undefined}
                 value={String(form.estoque)}
-                onChange={(e) => setForm((f) => ({ ...f, estoque: Number(e.target.value) }))}
+                onChange={(e) => {
+                  setForm((f) => ({ ...f, estoque: Number(e.target.value) }));
+                  clearInvalid('estoque');
+                }}
               />
             </Box>
 
@@ -412,8 +494,13 @@ export default function ProductsPage() {
                 id="diasAntes"
                 type="number"
                 min="0"
+                step="1"
+                appearance={invalidFields.has('diasAntes') ? 'danger' : undefined}
                 value={String(form.diasAntes)}
-                onChange={(e) => setForm((f) => ({ ...f, diasAntes: Number(e.target.value) }))}
+                onChange={(e) => {
+                  setForm((f) => ({ ...f, diasAntes: Number(e.target.value) }));
+                  clearInvalid('diasAntes');
+                }}
               />
               <Text fontSize="caption" color="neutral-textLow">
                 {t('products.fieldDaysBeforeHint')}
@@ -429,8 +516,13 @@ export default function ProductsPage() {
                 id="diasDepois"
                 type="number"
                 min="0"
+                step="1"
+                appearance={invalidFields.has('diasDepois') ? 'danger' : undefined}
                 value={String(form.diasDepois)}
-                onChange={(e) => setForm((f) => ({ ...f, diasDepois: Number(e.target.value) }))}
+                onChange={(e) => {
+                  setForm((f) => ({ ...f, diasDepois: Number(e.target.value) }));
+                  clearInvalid('diasDepois');
+                }}
               />
               <Text fontSize="caption" color="neutral-textLow">
                 {t('products.fieldDaysAfterHint')}

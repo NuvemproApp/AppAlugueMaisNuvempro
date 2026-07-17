@@ -23,7 +23,7 @@ import {
   Text,
   Title,
   Button,
-  Badge,
+  Tag,
   Select,
   Input,
   Spinner,
@@ -103,7 +103,7 @@ function KanbanColumn({ col, rentals, t }) {
   return (
     <Box style={{ minWidth: 260, flex: '1 0 260px' }}>
       <Box display="flex" alignItems="center" gap="2" marginBottom="3">
-        <Badge appearance={col.appearance}>{t(col.labelKey)}</Badge>
+        <Tag appearance={col.appearance}>{t(col.labelKey)}</Tag>
         <Text fontSize="caption" color="neutral-textLow">
           {rentals.length}
         </Text>
