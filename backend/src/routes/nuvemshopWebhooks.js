@@ -112,15 +112,29 @@ const EVENT_DATE_LABELS = ['Data do Evento', 'Fecha del Evento'];
 
 /**
  * Extrai a data do evento das propriedades de um produto do pedido.
- * A NS retorna properties como array de { name, value }.
+ * Confirmado contra a API de pedidos em produção (GET /orders/:id): properties
+ * vem como OBJETO plano { "Data do Evento": "2026-08-14" }, não como array de
+ * { name, value } — mantém suporte a array defensivamente, caso outra versão
+ * da API ou um contexto diferente (ex.: carrinho) retorne nesse formato.
  * Cobre pt-BR ("Data do Evento") e es-AR/es-MX ("Fecha del Evento").
  */
 function extractEventDate(properties) {
-  if (!Array.isArray(properties)) return null;
-  const prop = properties.find(
-    (p) => EVENT_DATE_LABELS.includes((p.name || '').trim())
-  );
-  return prop ? (prop.value || '').trim() : null;
+  if (!properties) return null;
+
+  if (Array.isArray(properties)) {
+    const prop = properties.find(
+      (p) => EVENT_DATE_LABELS.includes((p.name || '').trim())
+    );
+    return prop ? String(prop.value || '').trim() : null;
+  }
+
+  if (typeof properties === 'object') {
+    for (const label of EVENT_DATE_LABELS) {
+      if (properties[label] != null) return String(properties[label]).trim();
+    }
+  }
+
+  return null;
 }
 
 /**
@@ -222,7 +236,10 @@ async function processOrderCreated(storeNsId, orderId) {
 
     const reservationStart = new Date(eventDate.getTime() - rentable.diasAntes  * 86400000);
     const reservationEnd   = new Date(eventDate.getTime() + rentable.diasDepois * 86400000);
-    const quantity = item.quantity || 1;
+    // A API de pedidos retorna quantity como string (ex: "3") — sem o parseInt,
+    // a soma de estoque faz concatenação em vez de aritmética, e o Prisma
+    // rejeita a string num campo Int no create.
+    const quantity = parseInt(item.quantity, 10) || 1;
 
     // Checagem de capacidade: não bloqueia a criação (o pedido já foi pago), mas
     // deixa um alerta visível nos logs quando o total sobreposto excede o estoque
