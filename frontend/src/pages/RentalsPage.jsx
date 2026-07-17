@@ -32,7 +32,7 @@ import {
 } from '@nimbus-ds/components';
 import api from '../services/api.js';
 import { RENTAL_STATUS_META as COLUMNS } from '../lib/rentalStatus.js';
-import { toInputDate, formatDisplayDate } from '../lib/dateDisplay.js';
+import { toInputDate, formatDisplayDate, formatDisplayDateTime } from '../lib/dateDisplay.js';
 
 const itemId = (rentalId) => `rental-${rentalId}`;
 const columnId = (status) => `col-${status}`;
@@ -54,7 +54,7 @@ function RentalCardContent({ rental, t }) {
           {t('rentals.cardOrder', { number: rental.orderNumber })}
         </Text>
         <Text fontSize="caption" color="neutral-textLow">
-          {t('rentals.cardCreatedAt')}: {formatDisplayDate(rental.orderCreatedAt)}
+          {t('rentals.cardCreatedAt')}: {formatDisplayDateTime(rental.orderCreatedAt)}
         </Text>
         <Text fontSize="caption" color="neutral-textLow">
           {t('rentals.cardStart')}: {formatDisplayDate(rental.reservationStart)}
@@ -63,11 +63,11 @@ function RentalCardContent({ rental, t }) {
           {t('rentals.cardEnd')}: {formatDisplayDate(rental.reservationEnd)}
         </Text>
         <Text fontSize="caption" fontWeight="bold">
-          {rental.productName}
+          {t('rentals.cardProduct')}: {rental.productName}
         </Text>
         {rental.customerName && (
           <Text fontSize="caption" color="neutral-textLow">
-            {rental.customerName}
+            {t('rentals.cardCustomer')}: {rental.customerName}
           </Text>
         )}
       </Box>

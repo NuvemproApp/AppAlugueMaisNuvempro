@@ -72,6 +72,19 @@ router.get('/', async (req, res, next) => {
         where.productId = { in: matchingIds.length ? matchingIds : ['__nenhum__'] };
       }
 
+      // Filtro de data OPCIONAL no modo lista — sem ele, mostra tudo (é o
+      // padrão). Usa o mesmo campo escolhido em `criterio`, então filtrar e
+      // ordenar são sempre pelo mesmo critério. Cada ponta é independente:
+      // só "de" = a partir dali sem limite superior, só "até" = até ali sem
+      // limite inferior.
+      if (req.query.dataInicial || req.query.dataFinal) {
+        const range = {};
+        if (req.query.dataInicial) range.gte = new Date(`${req.query.dataInicial}T00:00:00`);
+        if (req.query.dataFinal) range.lte = new Date(`${req.query.dataFinal}T23:59:59`);
+        where[field] = range;
+      }
+
+      const sortDir = req.query.sortDir === 'desc' ? 'desc' : 'asc';
       const page = Math.max(1, parseInt(req.query.page, 10) || 1);
       const pageSize = Math.min(MAX_PAGE_SIZE, Math.max(1, parseInt(req.query.pageSize, 10) || DEFAULT_PAGE_SIZE));
 
@@ -79,7 +92,7 @@ router.get('/', async (req, res, next) => {
         prisma.rental.count({ where }),
         prisma.rental.findMany({
           where,
-          orderBy: { [field]: 'asc' },
+          orderBy: { [field]: sortDir },
           skip: (page - 1) * pageSize,
           take: pageSize,
         }),
@@ -92,6 +105,7 @@ router.get('/', async (req, res, next) => {
         pageSize,
         pageCount: Math.max(1, Math.ceil(total / pageSize)),
         criterio,
+        sortDir,
       });
     }
 

@@ -276,7 +276,9 @@ async function processOrderCreated(storeNsId, orderId) {
         eventDate,
         reservationStart,
         reservationEnd,
-        customerName:   order.customer?.name || null,
+        // Confirmado contra a API em produção: o pedido não tem campo "customer" —
+        // o nome do cliente vem em contact_name (fallback billing_name / endereço).
+        customerName:   order.contact_name || order.billing_name || order.shipping_address?.name || null,
         orderCreatedAt: order.created_at ? new Date(order.created_at) : new Date(),
       },
     });

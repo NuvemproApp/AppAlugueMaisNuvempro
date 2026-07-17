@@ -8,6 +8,7 @@ import {
   Button,
   Tag,
   Input,
+  Select,
   Table,
   Spinner,
   Alert,
@@ -31,7 +32,14 @@ export default function RentalsListPage() {
   const [error, setError] = useState('');
   const [searchInput, setSearchInput] = useState(''); // valor digitado (imediato)
   const [search, setSearch] = useState(''); // valor efetivamente buscado (debounced)
-  const [sortAsc, setSortAsc] = useState(true);
+  const [sortAsc, setSortAsc] = useState(true); // sort secundário, só a página atual (coluna Produto)
+
+  // Campos do filtro de critério/data — só valem depois de "Filtrar" (appliedRange).
+  const [criterio, setCriterio] = useState(1);
+  const [dataInicial, setDataInicial] = useState('');
+  const [dataFinal, setDataFinal] = useState('');
+  const [appliedRange, setAppliedRange] = useState({ criterio: 1, dataInicial: '', dataFinal: '' });
+  const [sortDir, setSortDir] = useState('asc'); // ordenação primária (servidor), pelo critério aplicado
 
   // Busca é feita no servidor — sem isso, com paginação real, ela só encontraria
   // produtos dentro da página atualmente carregada.
@@ -43,12 +51,20 @@ export default function RentalsListPage() {
     return () => clearTimeout(timer);
   }, [searchInput]);
 
-  const load = useCallback(async (pageArg, searchArg) => {
+  const load = useCallback(async (pageArg, searchArg, rangeArg, sortDirArg) => {
     setLoading(true);
     setError('');
     try {
       const { data } = await api.get('/api/rentals', {
-        params: { criterio: 2, page: pageArg, pageSize: PAGE_SIZE, search: searchArg || undefined },
+        params: {
+          criterio: rangeArg.criterio,
+          dataInicial: rangeArg.dataInicial || undefined,
+          dataFinal: rangeArg.dataFinal || undefined,
+          sortDir: sortDirArg,
+          page: pageArg,
+          pageSize: PAGE_SIZE,
+          search: searchArg || undefined,
+        },
       });
       setRentals(data.rentals || []);
       setPageCount(data.pageCount || 1);
@@ -59,10 +75,18 @@ export default function RentalsListPage() {
     }
   }, [t]);
 
-  useEffect(() => { load(page, search); }, [load, page, search]);
+  useEffect(() => {
+    load(page, search, appliedRange, sortDir);
+  }, [load, page, search, appliedRange, sortDir]);
 
-  // Ordena só a página atual (sort global exigiria ordenação no servidor) —
-  // aceitável, a ordem de fetch já é por data e é a página inteira visível.
+  function handleFilter() {
+    setAppliedRange({ criterio, dataInicial, dataFinal });
+    setPage(1);
+  }
+
+  // Ordena só a página atual por produto (sort global exigiria ordenação no
+  // servidor por esse campo) — o critério de data é quem ordena de verdade,
+  // no servidor, através de sortDir.
   const visible = useMemo(() => {
     return [...rentals].sort((a, b) => {
       const cmp = (a.productName || '').localeCompare(b.productName || '');
@@ -102,6 +126,38 @@ export default function RentalsListPage() {
           value={searchInput}
           onChange={(e) => setSearchInput(e.target.value)}
         />
+      </Box>
+
+      {/* Filtro e ordenação por critério de data */}
+      <Box display="flex" gap="3" flexWrap="wrap" alignItems="flex-end">
+        <Box display="flex" flexDirection="column" gap="1">
+          <Text as="label" htmlFor="list-criterio" fontSize="caption" fontWeight="bold">
+            {t('rentals.filterCriterio')}
+          </Text>
+          <Select id="list-criterio" value={String(criterio)} onChange={(e) => setCriterio(Number(e.target.value))}>
+            <option value="1">{t('rentals.criterioOrderCreated')}</option>
+            <option value="2">{t('rentals.criterioReservationStart')}</option>
+            <option value="3">{t('rentals.criterioReservationEnd')}</option>
+          </Select>
+        </Box>
+        <Box display="flex" flexDirection="column" gap="1">
+          <Text as="label" htmlFor="list-dataInicial" fontSize="caption" fontWeight="bold">
+            {t('rentals.filterFrom')}
+          </Text>
+          <Input id="list-dataInicial" type="date" value={dataInicial} onChange={(e) => setDataInicial(e.target.value)} />
+        </Box>
+        <Box display="flex" flexDirection="column" gap="1">
+          <Text as="label" htmlFor="list-dataFinal" fontSize="caption" fontWeight="bold">
+            {t('rentals.filterTo')}
+          </Text>
+          <Input id="list-dataFinal" type="date" value={dataFinal} onChange={(e) => setDataFinal(e.target.value)} />
+        </Box>
+        <Button appearance="primary" onClick={handleFilter}>
+          {t('rentals.filterApply')}
+        </Button>
+        <Button appearance="neutral" onClick={() => setSortDir((d) => (d === 'asc' ? 'desc' : 'asc'))}>
+          {sortDir === 'asc' ? '▲' : '▼'} {t(sortDir === 'asc' ? 'rentals.sortAscending' : 'rentals.sortDescending')}
+        </Button>
       </Box>
 
       {error && (
