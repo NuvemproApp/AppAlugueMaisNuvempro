@@ -1,4 +1,4 @@
-/* aluguemais — storefront script v2.5.1
+/* aluguemais — storefront script v2.6.0
  * Compatível com TODOS os temas Nuvemshop: legados, atuais, componentizados e futuros.
  * Referências:
  *   Anchor Points  : https://docs.nuvemshop.com.br/help/pontos-de-anchoragem
@@ -12,10 +12,28 @@
 !function () {
   'use strict';
 
+  // document.currentScript só é válido durante o parse síncrono da própria tag
+  // <script> — precisa ser capturado aqui, no topo, antes de qualquer código
+  // assíncrono (init() pode rodar depois, num listener de DOMContentLoaded,
+  // quando currentScript já teria voltado a ser null).
+  var _selfScript = document.currentScript;
+
   // ─── API base ─────────────────────────────────────────────────────────────────
   var API_FALLBACK = 'https://appaluguemaisnuvempro-production.up.railway.app';
 
   function detectApiBase() {
+    // Identifica a própria tag pelo elemento em execução, não pela URL —
+    // funciona mesmo se a Nuvemshop migrar o script para o CDN deles (URL
+    // deixa de conter "aluguemais"/"app.min.js").
+    if (_selfScript && _selfScript.src) {
+      try {
+        var apiSelf = new URL(_selfScript.src, location.href).searchParams.get('api');
+        if (apiSelf) return apiSelf.replace(/\/$/, '');
+      } catch (e) {}
+    }
+    // Fallback por padrão de URL — cobre injeção assíncrona (currentScript já
+    // nulo nesse caso) e o CDN atual, enquanto a migração pro CDN da Nuvemshop
+    // não acontece.
     var tags = document.querySelectorAll(
       'script[src*="aluguemais"],' +
       'script[src*="app.min.js"],' +
@@ -298,46 +316,45 @@
     return total;
   }
 
-  // ─── sessionStorage: data do evento por produto ────────────────────────────────
+  // ─── sessionStorage: data do evento por LINHA do carrinho ─────────────────────
   // Persiste a data selecionada para exibição no carrinho em temas legados.
   // Inspirado em SuperCampos captureProps() + sessionStorage.
   //
-  // Fila por produto, não valor único: o mesmo produto pode ter mais de uma
-  // reserva no carrinho ao mesmo tempo (ex: uma para agosto, outra para
-  // outubro) — guardar um valor único por productId fazia a 2ª reserva
-  // sobrescrever a data exibida da 1ª. Cada nova captura empilha; cada linha
-  // do carrinho consome (remove) a mais antiga ainda não reivindicada, na
-  // ordem em que foram adicionadas.
+  // Chave = ID real da linha do carrinho (data-item-id, ou equivalente — ver
+  // getLineItemId), não o productId. Um produto pode ter mais de uma reserva
+  // no carrinho ao mesmo tempo (ex: uma para agosto, outra para outubro); usar
+  // o ID de linha (único por reserva) em vez de uma fila por produto elimina
+  // qualquer dependência de ordem de processamento e sobrevive a reload de
+  // página, já que a associação fica salva por ID estável, não por posição.
   var _datesKey;
   function datesStorageKey() {
     return _datesKey || (_datesKey = 'alm_dates_' + storeNsId());
   }
 
-  function storeDateForProduct(pid, dateVal) {
+  function storeDateForLineItem(lineItemId, dateVal) {
     try {
       var raw = sessionStorage.getItem(datesStorageKey());
       var s = raw ? JSON.parse(raw) : {};
-      if (!Array.isArray(s[pid])) s[pid] = [];
-      // captureRentalDate() pode disparar duas vezes para o MESMO clique (listener
-      // de submit do form + patch de LS.addToCartEnhanced) — não empilha duplicata
-      // consecutiva, senão desalinha a fila para as próximas reservas do produto.
-      if (s[pid][s[pid].length - 1] !== dateVal) s[pid].push(dateVal);
+      s[lineItemId] = dateVal;
       sessionStorage.setItem(datesStorageKey(), JSON.stringify(s));
     } catch (e) {}
   }
 
-  function claimStoredDateForProduct(pid) {
+  function getDateForLineItem(lineItemId) {
     try {
       var raw = sessionStorage.getItem(datesStorageKey());
       if (!raw) return null;
-      var s = JSON.parse(raw);
-      var arr = s[pid];
-      if (!Array.isArray(arr) || arr.length === 0) return null;
-      var dateVal = arr.shift();
-      sessionStorage.setItem(datesStorageKey(), JSON.stringify(s));
-      return dateVal;
+      return JSON.parse(raw)[lineItemId] || null;
     } catch (e) { return null; }
   }
+
+  // Data capturada no "Alugar" mais recente, ainda sem uma linha de carrinho
+  // associada — vira definitiva (por lineItemId) na primeira vez que a NOVA
+  // linha resultante desse clique é processada em injectCartDate(). Linhas já
+  // conhecidas (de antes desse clique) nunca chegam a essa checagem, porque
+  // applyCartItem() só roda uma vez por elemento (_cartDone) — então não há
+  // risco de uma linha antiga "roubar" a data pendente de uma reserva nova.
+  var _pendingDate = null;
 
   // Captura a data do hidden input antes do form ser submetido.
   function captureRentalDate() {
@@ -345,7 +362,28 @@
     if (!pid || _rentableIds.indexOf(parseInt(pid, 10)) === -1) return;
     var inp = document.getElementById('alm-hidden-date') ||
               document.querySelector('input[name="' + propDateName() + '"]');
-    if (inp && inp.value) storeDateForProduct(pid, inp.value);
+    if (inp && inp.value) _pendingDate = inp.value;
+  }
+
+  // ─── Identificação da linha do carrinho ───────────────────────────────────────
+  // ID real e estável da linha (não confundir com o "cart-item-<X>" do Anchor
+  // Point de produto, que é compartilhado por todas as linhas do MESMO produto).
+  // Várias estratégias porque o atributo varia entre temas.
+  function getLineItemId(item) {
+    var attrId = item.getAttribute('data-item-id') || item.getAttribute('data-line-item-id');
+    if (attrId) return attrId;
+    var qInput = item.querySelector('input[name^="quantity["]');
+    if (qInput) {
+      var m = (qInput.name || '').match(/^quantity\[(.+)\]$/);
+      if (m) return m[1];
+    }
+    var removeBtn = item.querySelector('[data-component="line-item.remove"]');
+    if (removeBtn) {
+      var onclick = removeBtn.getAttribute('onclick') || '';
+      var m2 = onclick.match(/removeItem\(['"]?(\w+)['"]?/);
+      if (m2) return m2[1];
+    }
+    return null;
   }
 
   // ─── Detecção de propriedade nativa NS no carrinho ────────────────────────────
@@ -377,8 +415,19 @@
     if (container.querySelector('.nuvempro-cart-prod-pers')) return; // idempotente
     if (hasNativeCartDate(container)) return; // NS já exibe — não duplicar
 
-    var pid = getProductIdFromCart(container);
-    var dateVal = pid ? claimStoredDateForProduct(pid) : null;
+    var lineItemId = getLineItemId(container);
+    var dateVal = lineItemId ? getDateForLineItem(lineItemId) : null;
+
+    // Ainda não tem associação salva (linha nova, resultado do clique mais
+    // recente) — reivindica a data pendente e grava por lineItemId, daqui pra
+    // frente essa linha específica sempre acha a data certa, inclusive após
+    // reload de página (sessionStorage sobrevive, ao contrário de _pendingDate).
+    if (!dateVal && _pendingDate && lineItemId) {
+      dateVal = _pendingDate;
+      storeDateForLineItem(lineItemId, dateVal);
+      _pendingDate = null;
+    }
+
     if (!dateVal) return;
 
     var wrapper = document.createElement('div');
