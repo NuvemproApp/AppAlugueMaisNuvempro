@@ -12,7 +12,6 @@ import {
   Select,
   Input,
   Toggle,
-  Breadcrumb,
   Spinner,
   Alert,
   Thumbnail,
@@ -207,13 +206,16 @@ export default function ProductsPage() {
 
   // ─── Render ───────────────────────────────────────────────────────────────
   return (
-    <Box display="flex" flexDirection="column" gap="6" padding="6">
+    <Box display="flex" flexDirection="column" gap="4">
 
       {/* Breadcrumb */}
-      <Breadcrumb>
-        <Breadcrumb.Item onClick={() => navigate('/')}>{t('nav.dashboard')}</Breadcrumb.Item>
-        <Breadcrumb.Item>{t('products.title')}</Breadcrumb.Item>
-      </Breadcrumb>
+      <Box display="flex" alignItems="center" gap="1">
+        <Text as="span" color="primary-interactive" cursor="pointer" onClick={() => navigate('/')}>
+          {t('nav.dashboard')}
+        </Text>
+        <Text as="span" color="neutral-textDisabled"> / </Text>
+        <Text as="span" color="neutral-textLow">{t('products.title')}</Text>
+      </Box>
 
       {/* Cabeçalho */}
       <Box display="flex" justifyContent="space-between" alignItems="center" flexWrap="wrap" gap="3">

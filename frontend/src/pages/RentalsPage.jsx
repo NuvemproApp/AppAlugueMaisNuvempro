@@ -27,7 +27,6 @@ import {
   Badge,
   Select,
   Input,
-  Breadcrumb,
   Spinner,
   Alert,
   Card,
@@ -248,14 +247,20 @@ export default function RentalsPage() {
   }
 
   return (
-    <Box display="flex" flexDirection="column" gap="6" padding="6">
+    <Box display="flex" flexDirection="column" gap="4">
 
       {/* Breadcrumb */}
-      <Breadcrumb>
-        <Breadcrumb.Item onClick={() => navigate('/')}>{t('nav.dashboard')}</Breadcrumb.Item>
-        <Breadcrumb.Item onClick={() => navigate('/produtos')}>{t('products.title')}</Breadcrumb.Item>
-        <Breadcrumb.Item>{t('rentals.title')}</Breadcrumb.Item>
-      </Breadcrumb>
+      <Box display="flex" alignItems="center" gap="1">
+        <Text as="span" color="primary-interactive" cursor="pointer" onClick={() => navigate('/')}>
+          {t('nav.dashboard')}
+        </Text>
+        <Text as="span" color="neutral-textDisabled"> / </Text>
+        <Text as="span" color="primary-interactive" cursor="pointer" onClick={() => navigate('/produtos')}>
+          {t('products.title')}
+        </Text>
+        <Text as="span" color="neutral-textDisabled"> / </Text>
+        <Text as="span" color="neutral-textLow">{t('rentals.title')}</Text>
+      </Box>
 
       {/* Cabeçalho */}
       <Title as="h2">{t('rentals.heading')}</Title>
