@@ -1,4 +1,4 @@
-/* aluguemais — storefront script v2.5.0
+/* aluguemais — storefront script v2.5.1
  * Compatível com TODOS os temas Nuvemshop: legados, atuais, componentizados e futuros.
  * Referências:
  *   Anchor Points  : https://docs.nuvemshop.com.br/help/pontos-de-anchoragem
@@ -301,6 +301,13 @@
   // ─── sessionStorage: data do evento por produto ────────────────────────────────
   // Persiste a data selecionada para exibição no carrinho em temas legados.
   // Inspirado em SuperCampos captureProps() + sessionStorage.
+  //
+  // Fila por produto, não valor único: o mesmo produto pode ter mais de uma
+  // reserva no carrinho ao mesmo tempo (ex: uma para agosto, outra para
+  // outubro) — guardar um valor único por productId fazia a 2ª reserva
+  // sobrescrever a data exibida da 1ª. Cada nova captura empilha; cada linha
+  // do carrinho consome (remove) a mais antiga ainda não reivindicada, na
+  // ordem em que foram adicionadas.
   var _datesKey;
   function datesStorageKey() {
     return _datesKey || (_datesKey = 'alm_dates_' + storeNsId());
@@ -310,16 +317,25 @@
     try {
       var raw = sessionStorage.getItem(datesStorageKey());
       var s = raw ? JSON.parse(raw) : {};
-      s[pid] = dateVal;
+      if (!Array.isArray(s[pid])) s[pid] = [];
+      // captureRentalDate() pode disparar duas vezes para o MESMO clique (listener
+      // de submit do form + patch de LS.addToCartEnhanced) — não empilha duplicata
+      // consecutiva, senão desalinha a fila para as próximas reservas do produto.
+      if (s[pid][s[pid].length - 1] !== dateVal) s[pid].push(dateVal);
       sessionStorage.setItem(datesStorageKey(), JSON.stringify(s));
     } catch (e) {}
   }
 
-  function getStoredDateForProduct(pid) {
+  function claimStoredDateForProduct(pid) {
     try {
       var raw = sessionStorage.getItem(datesStorageKey());
       if (!raw) return null;
-      return JSON.parse(raw)[pid] || null;
+      var s = JSON.parse(raw);
+      var arr = s[pid];
+      if (!Array.isArray(arr) || arr.length === 0) return null;
+      var dateVal = arr.shift();
+      sessionStorage.setItem(datesStorageKey(), JSON.stringify(s));
+      return dateVal;
     } catch (e) { return null; }
   }
 
@@ -362,7 +378,7 @@
     if (hasNativeCartDate(container)) return; // NS já exibe — não duplicar
 
     var pid = getProductIdFromCart(container);
-    var dateVal = pid ? getStoredDateForProduct(pid) : null;
+    var dateVal = pid ? claimStoredDateForProduct(pid) : null;
     if (!dateVal) return;
 
     var wrapper = document.createElement('div');
