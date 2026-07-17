@@ -458,6 +458,11 @@
 
   var _rentableIds = [];
 
+  // Setado por setupProductPage() enquanto a página do produto estiver aberta —
+  // permite que processCart() (chamado a cada mutação do carrinho, incl. remoção)
+  // reavalie a disponibilidade exibida sem esperar o visitante tocar em data/qtde.
+  var _recheckAvailability = null;
+
   function processCart() {
     // ── Estratégia 1: seletores expandidos + productId ───────────────────────────
     // Cobre anchor points (ID no atributo) e temas legados (extração por DOM).
@@ -510,6 +515,10 @@
         p = p.parentElement;
       }
     }
+
+    // Carrinho mudou (item adicionado, removido ou quantidade alterada por outra
+    // via) — reavalia a disponibilidade da página do produto, se houver uma aberta.
+    if (_recheckAvailability) _recheckAvailability();
   }
 
   // ─── Patch de LS.addToCartEnhanced ────────────────────────────────────────────
@@ -661,6 +670,8 @@
     var qUp   = document.querySelector(PROD_QTY_UP);
     if (qDown) qDown.addEventListener('click', function () { if (dateInput.value) setTimeout(check, 60); });
     if (qUp)   qUp.addEventListener('click',   function () { if (dateInput.value) setTimeout(check, 60); });
+
+    _recheckAvailability = function () { if (dateInput.value) debounce(check, 200); };
   }
 
   // ─── Observer unificado + setInterval safety net ─────────────────────────────
