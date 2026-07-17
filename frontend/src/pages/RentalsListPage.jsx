@@ -12,38 +12,46 @@ import {
   Spinner,
   Alert,
   Thumbnail,
+  Pagination,
 } from '@nimbus-ds/components';
 import api from '../services/api.js';
 import { RENTAL_STATUS_MAP } from '../lib/rentalStatus.js';
-import { toInputDate, formatDisplayDate } from '../lib/dateDisplay.js';
+import { formatDisplayDate } from '../lib/dateDisplay.js';
 
-// Janela ampla (não é um filtro de data como o board — é "veja tudo relevante" com
-// busca por produto), respeitando o teto de 2 anos aplicado no backend.
-function wideRangeDefault() {
-  const dataFinal = new Date();
-  dataFinal.setDate(dataFinal.getDate() + 365);
-  const dataInicial = new Date();
-  dataInicial.setDate(dataInicial.getDate() - 180);
-  return { dataInicial: toInputDate(dataInicial), dataFinal: toInputDate(dataFinal) };
-}
+const PAGE_SIZE = 20;
 
 export default function RentalsListPage() {
   const { t } = useTranslation();
   const navigate = useNavigate();
 
   const [rentals, setRentals] = useState([]);
+  const [pageCount, setPageCount] = useState(1);
+  const [page, setPage] = useState(1);
   const [loading, setLoading] = useState(true);
   const [error, setError] = useState('');
-  const [search, setSearch] = useState('');
+  const [searchInput, setSearchInput] = useState(''); // valor digitado (imediato)
+  const [search, setSearch] = useState(''); // valor efetivamente buscado (debounced)
   const [sortAsc, setSortAsc] = useState(true);
 
-  const load = useCallback(async () => {
+  // Busca é feita no servidor — sem isso, com paginação real, ela só encontraria
+  // produtos dentro da página atualmente carregada.
+  useEffect(() => {
+    const timer = setTimeout(() => {
+      setSearch(searchInput.trim());
+      setPage(1);
+    }, 350);
+    return () => clearTimeout(timer);
+  }, [searchInput]);
+
+  const load = useCallback(async (pageArg, searchArg) => {
     setLoading(true);
     setError('');
     try {
-      const range = wideRangeDefault();
-      const { data } = await api.get('/api/rentals', { params: { criterio: 2, ...range } });
+      const { data } = await api.get('/api/rentals', {
+        params: { criterio: 2, page: pageArg, pageSize: PAGE_SIZE, search: searchArg || undefined },
+      });
       setRentals(data.rentals || []);
+      setPageCount(data.pageCount || 1);
     } catch {
       setError(t('rentals.errorLoad'));
     } finally {
@@ -51,19 +59,16 @@ export default function RentalsListPage() {
     }
   }, [t]);
 
-  useEffect(() => { load(); }, [load]);
+  useEffect(() => { load(page, search); }, [load, page, search]);
 
+  // Ordena só a página atual (sort global exigiria ordenação no servidor) —
+  // aceitável, a ordem de fetch já é por data e é a página inteira visível.
   const visible = useMemo(() => {
-    const term = search.trim().toLowerCase();
-    const filtered = term
-      ? rentals.filter((r) => (r.productName || '').toLowerCase().includes(term))
-      : rentals;
-
-    return [...filtered].sort((a, b) => {
+    return [...rentals].sort((a, b) => {
       const cmp = (a.productName || '').localeCompare(b.productName || '');
       return sortAsc ? cmp : -cmp;
     });
-  }, [rentals, search, sortAsc]);
+  }, [rentals, sortAsc]);
 
   return (
     <Box display="flex" flexDirection="column" gap="4">
@@ -94,8 +99,8 @@ export default function RentalsListPage() {
       <Box style={{ maxWidth: 360 }}>
         <Input
           placeholder={t('rentals.searchPlaceholder')}
-          value={search}
-          onChange={(e) => setSearch(e.target.value)}
+          value={searchInput}
+          onChange={(e) => setSearchInput(e.target.value)}
         />
       </Box>
 
@@ -188,6 +193,12 @@ export default function RentalsListPage() {
               })}
             </Table.Body>
           </Table>
+        </Box>
+      )}
+
+      {!loading && pageCount > 1 && (
+        <Box display="flex" justifyContent="center">
+          <Pagination activePage={page} pageCount={pageCount} onPageChange={setPage} />
         </Box>
       )}
 

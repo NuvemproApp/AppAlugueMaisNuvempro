@@ -27,12 +27,75 @@ async function findOwnedRental(id, storeId) {
   return rental;
 }
 
-// ─── GET /api/rentals ── lista aluguéis da loja para o board Kanban ──────────
+const MAX_PAGE_SIZE = 100;
+const DEFAULT_PAGE_SIZE = 20;
+
+function enrichRental(rental, productMap) {
+  const product = productMap.get(rental.productId);
+  return {
+    ...rental,
+    productName: product?.nuvemshopName || rental.productId,
+    productImage: product?.nuvemshopImage || null,
+  };
+}
+
+// ─── GET /api/rentals ──────────────────────────────────────────────────────
+// Dois modos, mesmo endpoint:
+//   - Board Kanban (sem page/pageSize): filtro de intervalo de data como antes,
+//     sem paginação — o board já é naturalmente limitado pelo próprio filtro.
+//   - Lista (com page/pageSize): sem filtro de data — mostra TODOS os aluguéis
+//     da loja (o board Kanban não deve ser o único lugar onde um aluguel
+//     "existe"; uma data fora da janela padrão não pode ficar invisível),
+//     paginado, com busca por nome do produto feita no servidor.
 router.get('/', async (req, res, next) => {
   try {
     const criterio = CRITERIO_FIELD[Number(req.query.criterio)] ? Number(req.query.criterio) : 1;
     const field = CRITERIO_FIELD[criterio];
+    const paginated = req.query.page != null || req.query.pageSize != null;
 
+    const rentableProducts = await prisma.rentableProduct.findMany({
+      where: { storeId: req.store.id },
+      select: { productId: true, nuvemshopName: true, nuvemshopImage: true },
+    });
+    const productMap = new Map(rentableProducts.map((p) => [p.productId, p]));
+
+    const where = { storeId: req.store.id };
+
+    if (paginated) {
+      const search = String(req.query.search || '').trim().toLowerCase();
+      if (search) {
+        const matchingIds = rentableProducts
+          .filter((p) => (p.nuvemshopName || '').toLowerCase().includes(search))
+          .map((p) => p.productId);
+        // Nenhum produto bate com a busca — força um where que não retorna nada,
+        // em vez de mandar um IN vazio (Prisma trataria como "sem filtro").
+        where.productId = { in: matchingIds.length ? matchingIds : ['__nenhum__'] };
+      }
+
+      const page = Math.max(1, parseInt(req.query.page, 10) || 1);
+      const pageSize = Math.min(MAX_PAGE_SIZE, Math.max(1, parseInt(req.query.pageSize, 10) || DEFAULT_PAGE_SIZE));
+
+      const [total, rentals] = await Promise.all([
+        prisma.rental.count({ where }),
+        prisma.rental.findMany({
+          where,
+          orderBy: { [field]: 'asc' },
+          skip: (page - 1) * pageSize,
+          take: pageSize,
+        }),
+      ]);
+
+      return res.json({
+        rentals: rentals.map((r) => enrichRental(r, productMap)),
+        total,
+        page,
+        pageSize,
+        pageCount: Math.max(1, Math.ceil(total / pageSize)),
+        criterio,
+      });
+    }
+
+    // Modo board (Kanban): comportamento original, intacto.
     const dataFinal = req.query.dataFinal ? new Date(`${req.query.dataFinal}T23:59:59`) : new Date();
     let dataInicial = req.query.dataInicial
       ? new Date(`${req.query.dataInicial}T00:00:00`)
@@ -43,33 +106,16 @@ router.get('/', async (req, res, next) => {
     if (dataFinal.getTime() - dataInicial.getTime() > MAX_RANGE_MS) {
       dataInicial = new Date(dataFinal.getTime() - MAX_RANGE_MS);
     }
+    where[field] = { gte: dataInicial, lte: dataFinal };
 
-    const [rentals, rentableProducts] = await Promise.all([
-      prisma.rental.findMany({
-        where: {
-          storeId: req.store.id,
-          [field]: { gte: dataInicial, lte: dataFinal },
-        },
-        orderBy: { [field]: 'asc' },
-      }),
-      prisma.rentableProduct.findMany({
-        where: { storeId: req.store.id },
-        select: { productId: true, nuvemshopName: true, nuvemshopImage: true },
-      }),
-    ]);
+    const rentals = await prisma.rental.findMany({ where, orderBy: { [field]: 'asc' } });
 
-    const productMap = new Map(rentableProducts.map((p) => [p.productId, p]));
-
-    const enriched = rentals.map((r) => {
-      const product = productMap.get(r.productId);
-      return {
-        ...r,
-        productName: product?.nuvemshopName || r.productId,
-        productImage: product?.nuvemshopImage || null,
-      };
+    res.json({
+      rentals: rentals.map((r) => enrichRental(r, productMap)),
+      criterio,
+      dataInicial,
+      dataFinal,
     });
-
-    res.json({ rentals: enriched, criterio, dataInicial, dataFinal });
   } catch (err) {
     next(err);
   }
