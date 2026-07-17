@@ -1,4 +1,4 @@
-/* aluguemais — storefront script v2.4.1
+/* aluguemais — storefront script v2.4.2
  * Compatível com TODOS os temas Nuvemshop: legados, atuais, componentizados e futuros.
  * Referências:
  *   Anchor Points  : https://docs.nuvemshop.com.br/help/pontos-de-anchoragem
@@ -463,6 +463,25 @@
   // reavalie a disponibilidade exibida sem esperar o visitante tocar em data/qtde.
   var _recheckAvailability = null;
 
+  // Assinatura do carrinho na última passada — processCart() também é chamado
+  // pelo setInterval de segurança (a cada 2,5s) mesmo sem nenhuma mudança real;
+  // sem essa comparação, _recheckAvailability() dispararia em loop indefinido
+  // (botão intercalando "Verificando..."/"Alugar" mesmo com o carrinho intacto).
+  var _lastCartSignature = null;
+
+  function cartSignature() {
+    var items = document.querySelectorAll('.alm-cart-item');
+    var parts = [];
+    for (var i = 0; i < items.length; i++) {
+      var pid = getProductIdFromCart(items[i]) || '?';
+      var date = extractCartItemDate(items[i]) || '?';
+      var qty = extractCartItemQty(items[i]);
+      parts.push(pid + ':' + date + ':' + qty);
+    }
+    parts.sort();
+    return parts.join('|');
+  }
+
   function processCart() {
     // ── Estratégia 1: seletores expandidos + productId ───────────────────────────
     // Cobre anchor points (ID no atributo) e temas legados (extração por DOM).
@@ -516,9 +535,13 @@
       }
     }
 
-    // Carrinho mudou (item adicionado, removido ou quantidade alterada por outra
-    // via) — reavalia a disponibilidade da página do produto, se houver uma aberta.
-    if (_recheckAvailability) _recheckAvailability();
+    // Só reavalia disponibilidade se o carrinho realmente mudou desde a última
+    // passada — evita loop de checagem a cada tick do setInterval de segurança.
+    var sig = cartSignature();
+    if (sig !== _lastCartSignature) {
+      _lastCartSignature = sig;
+      if (_recheckAvailability) _recheckAvailability();
+    }
   }
 
   // ─── Patch de LS.addToCartEnhanced ────────────────────────────────────────────
