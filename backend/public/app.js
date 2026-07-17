@@ -1,4 +1,4 @@
-/* aluguemais — storefront script v2.4.2
+/* aluguemais — storefront script v2.5.0
  * Compatível com TODOS os temas Nuvemshop: legados, atuais, componentizados e futuros.
  * Referências:
  *   Anchor Points  : https://docs.nuvemshop.com.br/help/pontos-de-anchoragem
@@ -626,10 +626,24 @@
 
     if (form) form.appendChild(hiddenDate);
 
+    // ── Guarda contra corrida entre checagens ──────────────────────────────────
+    // _checkSeq: invalida respostas de fetch que chegam fora de ordem (ex: usuário
+    //   troca a quantidade rápido — a resposta antiga da qtde anterior não deve
+    //   sobrescrever o estado já validado pela checagem mais nova).
+    // _lastValidatedSig: só o combo data+qtde que passou pela ÚLTIMA checagem
+    //   concluída conta como "validado" — o submit é bloqueado se o usuário
+    //   mudar data/qtde depois disso e clicar antes da nova checagem terminar,
+    //   mesmo que o botão ainda esteja visualmente habilitado.
+    var _checkSeq = 0;
+    var _lastValidatedSig = null;
+
+    function currentSig() { return dateInput.value + '|' + getQty(); }
+
     function check() {
       var val = dateInput.value;
       var selected = fromISO(val);
       hiddenDate.value = val || '';
+      _checkSeq++;
 
       if (!selected) {
         setBtn(buyBtn, 'disabled', TXT.defineDate());
@@ -646,6 +660,7 @@
       }
 
       var qty = getQty();
+      var mySeq = _checkSeq;
       setBtn(buyBtn, 'checking', TXT.checking());
       msgEl.textContent = '';
 
@@ -655,6 +670,8 @@
                 '/availability?from=' + toISO(fromDate) + '&to=' + toISO(toDate) + '&qty=' + qty;
 
       jsonFetch(url, function (err, data) {
+        if (mySeq !== _checkSeq) return; // superada por uma checagem mais recente — ignora
+
         if (err || !data) {
           setBtn(buyBtn, 'disabled', TXT.defineDate());
           msgEl.style.color = '#c0392b';
@@ -667,6 +684,7 @@
         var alreadyInCart = cartQtyOverlapping(pid, fromDate, toDate, cfg.diasAntes, cfg.diasDepois);
         var remaining = Math.max(0, (data.remaining || 0) - alreadyInCart);
         if (remaining >= qty) {
+          _lastValidatedSig = val + '|' + qty;
           setBtn(buyBtn, 'enabled', TXT.rent());
           msgEl.style.color = '#27ae60';
           msgEl.textContent = TXT.okHint() + (remaining > 1 ? ' (' + remaining + ')' : '');
@@ -682,6 +700,19 @@
       });
     }
 
+    // Última linha de defesa: mesmo que o botão pareça habilitado, só deixa
+    // enviar se a data+qtde atuais forem exatamente as que foram validadas por
+    // último. Se o usuário mudou algo nesse meio-tempo, bloqueia e reavalia já.
+    if (form) {
+      form.addEventListener('submit', function (e) {
+        if (currentSig() !== _lastValidatedSig) {
+          e.preventDefault();
+          if (e.stopImmediatePropagation) e.stopImmediatePropagation();
+          check();
+        }
+      }, true);
+    }
+
     dateInput.addEventListener('change', function () { debounce(check, 350); });
 
     var qInput = findProdQtyInput();
@@ -694,7 +725,12 @@
     if (qDown) qDown.addEventListener('click', function () { if (dateInput.value) setTimeout(check, 60); });
     if (qUp)   qUp.addEventListener('click',   function () { if (dateInput.value) setTimeout(check, 60); });
 
-    _recheckAvailability = function () { if (dateInput.value) debounce(check, 200); };
+    _recheckAvailability = function () {
+      if (dateInput.value) {
+        _lastValidatedSig = null; // carrinho mudou — invalida a validação anterior até a nova checagem confirmar
+        debounce(check, 200);
+      }
+    };
   }
 
   // ─── Observer unificado + setInterval safety net ─────────────────────────────
