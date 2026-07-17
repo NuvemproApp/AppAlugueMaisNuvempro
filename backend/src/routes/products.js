@@ -46,11 +46,26 @@ function extractNameImage(nsProduct) {
 // ─── GET /api/products ── lista produtos alugáveis (sem chamada externa) ─────
 router.get('/', async (req, res, next) => {
   try {
-    const products = await prisma.rentableProduct.findMany({
-      where: { storeId: req.store.id },
-      orderBy: { createdAt: 'desc' },
-    });
-    res.json({ products });
+    const [products, rentalAggs] = await Promise.all([
+      prisma.rentableProduct.findMany({
+        where: { storeId: req.store.id },
+        orderBy: { createdAt: 'desc' },
+      }),
+      prisma.rental.groupBy({
+        by: ['productId'],
+        where: { storeId: req.store.id, status: { in: [1, 2] } },
+        _sum: { quantity: true },
+      }),
+    ]);
+
+    const rentalMap = new Map(rentalAggs.map((r) => [r.productId, r._sum.quantity || 0]));
+
+    const productsWithRented = products.map((p) => ({
+      ...p,
+      qtdeAlugada: rentalMap.get(p.productId) || 0,
+    }));
+
+    res.json({ products: productsWithRented });
   } catch (err) {
     next(err);
   }

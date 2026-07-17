@@ -304,9 +304,13 @@ export default function ProductsPage() {
                     </Box>
                   </Table.Cell>
 
-                  {/* Qtde. Alugada — vazio por ora */}
+                  {/* Qtde. Alugada — soma de quantity dos aluguéis ativos (status 1 e 2) */}
                   <Table.Cell>
-                    <Text color="neutral-textDisabled">—</Text>
+                    {p.qtdeAlugada > 0 ? (
+                      <Text fontWeight="bold">{p.qtdeAlugada}</Text>
+                    ) : (
+                      <Text color="neutral-textDisabled">0</Text>
+                    )}
                   </Table.Cell>
 
                   {/* Situação */}
