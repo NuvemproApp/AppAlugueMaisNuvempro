@@ -124,47 +124,6 @@
     "accept": "Le\u00ed y acepto los T\u00e9rminos de Uso",
     "error": "Error al aceptar los t\u00e9rminos. Int\u00e9ntalo de nuevo."
   },
-  "onboarding": {
-    "title": "Configurar tu perfil",
-    "steps": {
-      "s1": "Sobre tu negocio",
-      "s2": "Preferencias de contenido",
-      "s3": "Detalles adicionales"
-    },
-    "fields": {
-      "niche": "Nicho de mercado",
-      "nichePlaceholder": "Ej: Moda femenina, electr\u00f3nica, tienda de mascotas...",
-      "audience": "P\u00fablico objetivo",
-      "audiencePlaceholder": "Ej: Mujeres de 25-40 a\u00f1os, gamers...",
-      "tone": "Tono de comunicaci\u00f3n",
-      "toneOptions": {
-        "professional": "Profesional",
-        "casual": "Casual",
-        "friendly": "Amigable",
-        "formal": "Formal"
-      },
-      "frequency": "Frecuencia de publicaci\u00f3n",
-      "frequencyOptions": {
-        "daily": "Diaria",
-        "weekly": "Semanal",
-        "biweekly": "Quincenal",
-        "monthly": "Mensual"
-      },
-      "articleLength": "Largo del art\u00edculo",
-      "articleLengthOptions": {
-        "short": "Corto (300-500 palabras)",
-        "medium": "Medio (500-1000 palabras)",
-        "long": "Largo (1000+ palabras)"
-      },
-      "keywords": "Palabras clave",
-      "keywordsPlaceholder": "Separa por coma: palabra1, palabra2...",
-      "extras": "Informaci\u00f3n adicional",
-      "extrasPlaceholder": "\u00bfAlgo m\u00e1s que debamos saber sobre tu negocio?"
-    },
-    "back": "Volver",
-    "next": "Siguiente",
-    "finish": "Finalizar"
-  },
   "billing": {
     "title": "Planes y Facturaci\u00f3n",
     "locked": "Elige un plan para habilitar el acceso a la aplicaci\u00f3n. Si ya te suscribiste, haz clic en verificar.",

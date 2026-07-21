@@ -2,12 +2,10 @@ import React from 'react';
 import { Routes, Route, Navigate } from 'react-router-dom';
 import { useTranslation } from 'react-i18next';
 import { useNexo } from './providers/NexoProvider.jsx';
-import { useProfile } from './hooks/useProfile.js';
 import Layout from './components/Layout.jsx';
 import LoadingState from './components/LoadingState.jsx';
 import TermsPage from './pages/TermsPage.jsx';
 import BillingPage from './pages/BillingPage.jsx';
-import Onboarding from './pages/Onboarding.jsx';
 import ProductsPage from './pages/ProductsPage.jsx';
 import RentalsListPage from './pages/RentalsListPage.jsx';
 import RentalsPage from './pages/RentalsPage.jsx';
@@ -42,9 +40,8 @@ function TrialBanner({ daysLeft }) {
 
 export default function App() {
   const { store, billingStatus, termsAccepted, setTermsAccepted, termsData, loading: nexoLoading } = useNexo();
-  const { profile, loading: profileLoading, hasProfile, refetch: refetchProfile } = useProfile();
 
-  if (nexoLoading || profileLoading) {
+  if (nexoLoading) {
     return <LoadingState />;
   }
 
@@ -61,11 +58,6 @@ export default function App() {
   // Gate 2: Billing
   if (billingStatus && billingStatus.hasAccess === false) {
     return <BillingPage locked />;
-  }
-
-  // Gate 3: Onboarding
-  if (!hasProfile) {
-    return <Onboarding onComplete={refetchProfile} />;
   }
 
   // Banner de trial gratuito (trial_mode=free, dentro do prazo)
