@@ -502,6 +502,14 @@
   var _cartDone = makeWeakSet();
 
   function applyCartItem(container) {
+    // injectCartDate() é idempotente por conta própria (marker .nuvempro-cart-prod-pers
+    // no DOM) — roda em TODA passada, fora do guard abaixo, de propósito. Se ficasse
+    // atrás do "if (_cartDone.has(container)) return", uma primeira tentativa que falhe
+    // por timing (DOM do item ainda incompleto, outro script re-renderizando o carrinho
+    // no meio do caminho) marcaria o item como "processado" pra sempre e nenhuma das
+    // passadas seguintes (MutationObserver, setInterval de 2,5s) tentaria de novo.
+    injectCartDate(container);
+
     if (_cartDone.has(container)) return;
     _cartDone.add(container);
 
@@ -516,9 +524,6 @@
     }
     var btns = container.querySelectorAll(CART_QTY_BTNS);
     for (var j = 0; j < btns.length; j++) btns[j].style.display = 'none';
-
-    // Exibe data em temas que não renderizam properties[] nativamente
-    injectCartDate(container);
   }
 
   var _rentableIds = [];
